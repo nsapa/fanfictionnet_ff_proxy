@@ -28,8 +28,11 @@ stay_in_mainloop = 1
 
 def prepare_firefox():
     logger = logging.getLogger(name="prepare_firefox")
+
+    service_log_path = './geckodriver.log' if args.verbose else '/dev/null'
+
     try:
-        driver = webdriver.Firefox()
+        driver = webdriver.Firefox(service_log_path=service_log_path)
     except Exception as e:
         logger.error("Failed to initialize Firefox: %s", e.message)
         return False
