@@ -15,8 +15,9 @@ import hashlib
 import json
 import signal
 import random
+import socket
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -135,6 +136,12 @@ def cloudfare_clickcaptcha():
     except TimeoutException:
         logger.error('Failed to load the story text')
 
+    try:
+        driver.switch_to.alert.accept()
+    except:
+        pass
+
+    logger.info('Found the storytext!')
     return True
 
 
@@ -161,6 +168,8 @@ if __name__ == "__main__":
     p.add_argument('--cookie-filename', help='Path to the cookie store')
 
     p.add_argument('--extension-path', help='Path to the XPI of Privacy Pass')
+
+    p.add_argument('--port', type=int, default=8888, help='TCP port listened')
 
     args = p.parse_args()
 
@@ -211,33 +220,70 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGINT, sigint_handler)
 
-    time_last_cookie_dump = time.monotonic()
+    logging.info('Will listen on port %i', args.port)
 
-    ff_chapter = 1
+    serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        serversocket.bind(('127.0.0.1', args.port))
+    except Exception as e:
+        logging.error('Bind failed: %s', e.message)
+        exit(3)
+    serversocket.listen(5)
+
+    time_last_cookie_dump = time.monotonic()
 
     while (stay_in_mainloop):
         if (time.monotonic() - time_last_cookie_dump) > 60:
             cookie_dump()
             time_last_cookie_dump = time.monotonic()
 
-        driver.get('https://www.fanfiction.net/s/10273521/{}/Songbird'.format(
-            ff_chapter))
+        (clientsocket, s_address) = serversocket.accept()
 
-        logging.info('Current URL = %s, page title = %s', driver.current_url,
-                     driver.title)
+        chunks = []
+        bytes_recd = 0
+        MSGLEN = 4096  #Should be enough for any URL
+        while bytes_recd < MSGLEN:
+            chunk = clientsocket.recv(min(MSGLEN - bytes_recd, 2048))
+            if chunk == b'':
+                logging.debug('Connection closed by the client %s:%i',
+                              s_address[0], s_address[1])
+                break
+            chunks.append(chunk)
+            bytes_recd = bytes_recd + len(chunk)
+        data_from_client = b''.join(chunks)
+
+        logging.debug('Received data from client: %s', repr(data_from_client))
+        new_url = data_from_client.decode("utf-8").strip('\n')
+
+        driver.get(new_url)
+
+        try:
+            driver.refresh()
+        except UnexpectedAlertPresentException:
+            driver.switch_to.alert.accept()
+
+        try:
+            logging.info('Current URL = %s, page title = %s',
+                         driver.current_url, driver.title)
+        except UnexpectedAlertPresentException:
+            driver.switch_to.alert.accept()
 
         if driver.title.startswith('Attention Required!'):
             if cloudfare_clickcaptcha():
-                driver.refresh()
-                logging.info('Current URL = %s, page title = %s',
-                             driver.current_url, driver.title)
+                driver.get(new_url)
+                try:
+                    logging.info('Current URL = %s, page title = %s',
+                                 driver.current_url, driver.title)
+                except UnexpectedAlertPresentException:
+                    driver.switch_to.alert.accept()
+                    logging.debug('Accepted an alert')
                 cookie_dump()
 
-        ff_chapter += 1
-        if ff_chapter > 17:
-            cookie_dump()
-            break
+        clientsocket.send(driver.page_source.encode('utf-8'))
+        clientsocket.close()
+
         time.sleep(2)
 
+    serversocket.close()
     cleanup()
     exit()
