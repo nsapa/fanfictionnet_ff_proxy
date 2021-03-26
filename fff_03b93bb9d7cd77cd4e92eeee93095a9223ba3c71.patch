@@ -31,7 +31,7 @@ index 358a0491..abd94e59 100644
                  fetchcls = fetcher.RequestsFetcher
              self.fetcher = fetchcls(self.getConfig,
 diff --git a/fanficfare/fetcher.py b/fanficfare/fetcher.py
-index 2a934898..422186f9 100644
+index 2a934898..41e39950 100644
 --- a/fanficfare/fetcher.py
 +++ b/fanficfare/fetcher.py
 @@ -54,6 +54,8 @@ from requests_file import FileAdapter
@@ -43,7 +43,7 @@ index 2a934898..422186f9 100644
  from . import exceptions
  
  ## makes requests/cloudscraper dump req/resp headers.
-@@ -515,6 +517,48 @@ class CloudScraperFetcher(RequestsFetcher):
+@@ -515,6 +517,61 @@ class CloudScraperFetcher(RequestsFetcher):
              msg = unicode(cfe).replace(' in the opensource (free) version','...')
              raise exceptions.FailedToDownload('cloudscraper reports: "%s"'%msg)
  
@@ -62,9 +62,11 @@ index 2a934898..422186f9 100644
 +        if sent == 0:
 +            logging.debug('Connection lost during sending')
 +
-+        header = s.recv(4096)
-+        size_expected = int(header.decode('utf-8').split('\n')[0])
-+        logger.debug('Expecting %i bytes', size_expected)
++        header_raw = s.recv(4096)
++        header = header_raw.split(b'$END_OF_HEADER$')[0].decode('utf-8')
++        size_expected = int(header.split('||')[0])
++        type_expected = header.split('||')[1]
++        logger.debug('Expecting %i bytes of %s', size_expected, type_expected)
 +
 +        chunks = []
 +        bytes_recd = 0
@@ -72,6 +74,9 @@ index 2a934898..422186f9 100644
 +        while bytes_recd < size_expected:
 +            chunk = s.recv(4096)
 +            #logger.debug('Receiving %i bytes from socket', bytes_recd)
++            if len(chunk.split(b'$END_OF_HEADER$')) > 1:
++                # We have part of the header in our chunk!
++                chunk = chunk.split(b'$END_OF_HEADER$')[1]
 +            if chunk == b'':
 +                logging.debug('Connection closed by remote host')
 +                break
@@ -80,10 +85,18 @@ index 2a934898..422186f9 100644
 +        logger.debug('Closing connection after %i bytes', bytes_recd)
 +
 +        s.close()
++        
++        if type_expected == 'text':
++            content = b''.join(chunks).decode("utf-8")
++            logger.debug('Start of HTML tag: %s || End of HTML tag: %s', content.startswith('<html'), content.endswith('</html>'))
 +
-+        content = b''.join(chunks).decode("utf-8")
++        if type_expected == 'image':
++            content = b''.join(chunks)
++            logger.debug('Got %i bytes of image', len(content))
 +
-+        logger.debug('Start of HTML tag: %s || End of HTML tag: %s', content.startswith('<html'), content.endswith('</html>'))
++        if type_expected == 'binary':
++            raise NotImplementedError()
++
 +        return FetcherResponse(content,
 +                                   url,
 +                                   False)

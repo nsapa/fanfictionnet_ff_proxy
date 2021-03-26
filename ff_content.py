@@ -308,14 +308,18 @@ if __name__ == "__main__":
                     logging.debug('Accepted an alert')
                 cookie_dump()
 
+        document_type = 'binary'
         if url_type == 'text/html':
+            document_type = 'text'
             document_as_bytes = driver.page_source.encode('utf-8')
         if url_type.startswith('image/'):
+            document_type = 'image'
             document_as_bytes = get_image_content_as_bytes(
                 driver, driver.current_url)
 
-        clientsocket.send(str(len(document_as_bytes)).encode('utf-8') +
-                          b"\n")  #len
+        clientsocket.send(
+            str(len(document_as_bytes)).encode('utf-8') + b'||' +
+            document_type.encode('utf-8') + b"$END_OF_HEADER$")  #len
         clientsocket.sendall(document_as_bytes)
         clientsocket.close()
 
