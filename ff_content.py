@@ -36,7 +36,7 @@ exit_triggered = 0
 
 
 def prepare_firefox():
-    # Initialize Firefox, load the cookie store, install Privacy Pass, ask the user to do some captcha
+    # Initialize Firefox & load the cookie store
     logger = logging.getLogger(name="prepare_firefox")
 
     service_log_path = './geckodriver.log' if args.verbose else '/dev/null'
@@ -60,6 +60,7 @@ def prepare_firefox():
         return False
 
     cookies = list()
+    logger.info('Trying to load existing cookie...')
     try:
         with open(cookie_store, 'r') as cookie_file:
             cookies = json.load(codecs.getwriter('utf-8')(cookie_file))
@@ -77,23 +78,7 @@ def prepare_firefox():
             driver.get('{}{}'.format(prefix, cookie['domain']))
             driver.add_cookie(cookie)
         logger.debug('Added %i cookie(s)', len(cookies))
-    """ Don't seem to work
-    try:
-        addon_id = driver.install_addon(os.path.abspath(extension_path))
-    except Exception as e:
-        logger.error('Failed to install Privacy Pass: %s', e.message)
-        return False
-    else:
-        logger.debug('Successfully installed Privacy Pass (id = %s)', addon_id)
 
-    try:
-        driver.get('https://www.hcaptcha.com/privacy-pass')
-    except Exception as e:
-        logger.error('Cannot navigate to hcaptcha: %s', e.message)
-        return False
-
-    input('Please resolve some captcha to get credits then press enter')
-    """
     return driver
 
 
@@ -213,9 +198,6 @@ if __name__ == "__main__":
     p.add_argument('--log-filename', help='Path to the log file')
 
     p.add_argument('--cookie-filename', help='Path to the cookie store')
-    '''
-    p.add_argument('--extension-path', help='Path to the XPI of Privacy Pass')
-    '''
 
     p.add_argument('--port', type=int, default=8888, help='TCP port listened')
 
@@ -227,11 +209,6 @@ if __name__ == "__main__":
         log_filename = '{}.log'.format(__software__)
         if args.log_filename is not None:
             log_filename = args.log_filename
-    '''
-    extension_path = './privacy_pass-2.0.8-fx.xpi'
-    if args.extension_path is not None:
-        extension_path = args.extension_path
-    '''
 
     cookie_store = './cookie.json'
     if args.cookie_filename is not None:
