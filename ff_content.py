@@ -16,6 +16,7 @@ import json
 import signal
 import random
 import socket
+import base64
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentException
 from selenium.webdriver.common.by import By
@@ -30,6 +31,7 @@ __email__ = "nico@byme.at"
 __status__ = "Alpha"
 
 stay_in_mainloop = 1
+exit_triggered = 0
 
 
 def prepare_firefox():
@@ -118,10 +120,20 @@ def cleanup():
 
 
 def sigint_handler(signal, frame):
-    logger = logging.getLogger(name="signal_handler")
-    logger.info('Got SIGINT, breaking the main loop...')
+    global exit_triggered
     global stay_in_mainloop
+
+    logger = logging.getLogger(name="signal_handler")
+
+    if exit_triggered == 1:
+        logger.info('Got SIGINT a second time, exiting')
+        sys.exit(4)
+
+    logger.info('Got SIGINT, breaking the main loop...')
+
     stay_in_mainloop = 0
+    exit_triggered = 1
+
     return True
 
 
@@ -148,6 +160,36 @@ def cloudfare_clickcaptcha():
     return True
 
 
+def get_image_content_as_bytes(driver, uri):
+    logger = logging.getLogger(name="get_image_content_as_bytes")
+    # From https://stackoverflow.com/questions/47424245/how-to-download-an-image-with-python-3-selenium-if-the-url-begins-with-blob/47425305#47425305
+    result = driver.execute_async_script(
+        """
+    var uri = arguments[0];
+    var callback = arguments[1];
+    var toBase64 = function(buffer){for(var r,n=new Uint8Array(buffer),t=n.length,a=new Uint8Array(4*Math.ceil(t/3)),i=new Uint8Array(64),o=0,c=0;64>c;++c)i[c]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charCodeAt(c);for(c=0;t-t%3>c;c+=3,o+=4)r=n[c]<<16|n[c+1]<<8|n[c+2],a[o]=i[r>>18],a[o+1]=i[r>>12&63],a[o+2]=i[r>>6&63],a[o+3]=i[63&r];return t%3===1?(r=n[t-1],a[o]=i[r>>2],a[o+1]=i[r<<4&63],a[o+2]=61,a[o+3]=61):t%3===2&&(r=(n[t-2]<<8)+n[t-1],a[o]=i[r>>10],a[o+1]=i[r>>4&63],a[o+2]=i[r<<2&63],a[o+3]=61),new TextDecoder("ascii").decode(a)};
+    var xhr = new XMLHttpRequest();
+    xhr.responseType = 'arraybuffer';
+    xhr.onload = function(){ callback(toBase64(xhr.response)) };
+    xhr.onerror = function(){ callback(xhr.status) };
+    xhr.open('GET', uri);
+    xhr.send();
+    """, uri)
+    if type(result) == int:
+        logger.error("Failed to grab file content with status %s" % result)
+        return False
+    return base64.b64decode(result)
+
+
+def get_document_content_type(driver):
+    logger = logging.getLogger(name="get_file_content_as_bytes")
+    result = driver.execute_script('return document.contentType;')
+    if type(result) != str:
+        logger.error('Failed to get document.contentType')
+        return False
+    return result
+
+
 class CustomFormatter(logging.Formatter):
     def formatTime(self, record, datefmt=None):
         if '%f' in datefmt:
@@ -169,8 +211,9 @@ if __name__ == "__main__":
     p.add_argument('--log-filename', help='Path to the log file')
 
     p.add_argument('--cookie-filename', help='Path to the cookie store')
-
+    '''
     p.add_argument('--extension-path', help='Path to the XPI of Privacy Pass')
+    '''
 
     p.add_argument('--port', type=int, default=8888, help='TCP port listened')
 
@@ -182,10 +225,11 @@ if __name__ == "__main__":
         log_filename = 'selenium-firefox-proxy.log'
         if args.log_filename is not None:
             log_filename = args.log_filename
-
+    '''
     extension_path = './privacy_pass-2.0.8-fx.xpi'
     if args.extension_path is not None:
         extension_path = args.extension_path
+    '''
 
     cookie_store = './cookie.json'
     if args.cookie_filename is not None:
@@ -253,6 +297,7 @@ if __name__ == "__main__":
         logging.debug('Received data from client %s:%i: %s', s_address[0],
                       s_address[1], repr(data_from_client))
         new_url = data_from_client.decode("utf-8").strip('\n')
+        url_type = None
 
         driver.get(new_url)
 
@@ -261,31 +306,40 @@ if __name__ == "__main__":
         except UnexpectedAlertPresentException:
             driver.switch_to.alert.accept()
 
+        url_type = get_document_content_type(driver)
+
         try:
-            logging.info('Current URL = %s, page title = %s',
-                         driver.current_url, driver.title)
+            logging.info('Current URL = %s, page title = %s, mimetype = %s',
+                         driver.current_url, driver.title, url_type)
         except UnexpectedAlertPresentException:
             driver.switch_to.alert.accept()
 
         if driver.title.startswith('Attention Required!'):
             if cloudfare_clickcaptcha():
                 driver.get(new_url)
+                url_type = get_document_content_type(driver)
                 try:
-                    logging.info('Current URL = %s, page title = %s',
-                                 driver.current_url, driver.title)
+                    logging.info(
+                        'Current URL = %s, page title = %s, mimetype = %s',
+                        driver.current_url, driver.title, url_type)
                 except UnexpectedAlertPresentException:
                     driver.switch_to.alert.accept()
                     logging.debug('Accepted an alert')
                 cookie_dump()
 
-        clientsocket.send(
-            str(len(driver.page_source.encode('utf-8'))).encode('utf-8') +
-            b"\n")  #len
-        clientsocket.sendall(driver.page_source.encode('utf-8'))
+        if url_type == 'text/html':
+            document_as_bytes = driver.page_source.encode('utf-8')
+        if url_type.startswith('image/'):
+            document_as_bytes = get_image_content_as_bytes(
+                driver, driver.current_url)
+
+        clientsocket.send(str(len(document_as_bytes)).encode('utf-8') +
+                          b"\n")  #len
+        clientsocket.sendall(document_as_bytes)
         clientsocket.close()
 
         time.sleep(2)
 
     serversocket.close()
     cleanup()
-    exit(0)
+    sys.exit(0)
