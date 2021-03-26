@@ -27,6 +27,7 @@ stay_in_mainloop = 1
 
 
 def prepare_firefox():
+    # Initialize Firefox, load the cookie store, install Privacy Pass, ask the user to do some captcha
     logger = logging.getLogger(name="prepare_firefox")
 
     service_log_path = './geckodriver.log' if args.verbose else '/dev/null'
@@ -42,12 +43,27 @@ def prepare_firefox():
                  driver.capabilities['platformName'],
                  driver.capabilities['moz:processID'])
 
+    try:
+        driver.get('http://www.example.com')
+    except Exception as e:
+        logger.error('Cannot navigate to example.com: %s', e.message)
+        return False
+
     cookies = list()
     try:
         with open(cookie_store, 'r') as cookie_file:
             cookies = json.load(codecs.getwriter('utf-8')(cookie_file))
     except:
-        logger.debug('No cookies found to import')
+        logger.debug('No cookie to import...')
+    else:
+        for cookie in cookies:
+            prefix = "http://"
+            if cookie['domain'].startswith('.'):
+                prefix = "http://www"
+
+            driver.get('{}{}'.format(prefix, cookie['domain']))
+            driver.add_cookie(cookie)
+        logger.debug('Added %i cookie(s)', len(cookies))
 
     try:
         addon_id = driver.install_addon(os.path.abspath(extension_path))
@@ -65,6 +81,13 @@ def prepare_firefox():
 
     input('Please resolve some captcha to get credits then press enter')
 
+    return driver
+
+
+def cookie_dump():
+    # Export as a json the cookie stored in the browser
+    logger = logging.getLogger(name="cookie_dump")
+
     with open(cookie_store, 'wb') as cookie_file:
         logger.debug('Dumping cookies to %s', cookie_store)
         json.dump(driver.get_cookies(),
@@ -72,10 +95,11 @@ def prepare_firefox():
                   ensure_ascii=False,
                   indent=4)
 
-    return driver
+    return
 
 
 def cleanup():
+    # Try to close properly the driven browser
     logger = logging.getLogger(name="cleanup")
     try:
         driver.quit()
@@ -166,7 +190,13 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, sigint_handler)
 
     logging.info('Break here')
+
+    time_last_cookie_dump = time.monotonic()
+
     while (stay_in_mainloop):
+        if (time.monotonic() - time_last_cookie_dump) > 60:
+            cookie_dump()
         pass
+
     cleanup()
     exit()
