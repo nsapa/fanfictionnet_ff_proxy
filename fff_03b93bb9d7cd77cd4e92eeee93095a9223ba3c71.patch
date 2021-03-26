@@ -1,0 +1,94 @@
+diff --git a/fanficfare/configurable.py b/fanficfare/configurable.py
+index 358a0491..abd94e59 100644
+--- a/fanficfare/configurable.py
++++ b/fanficfare/configurable.py
+@@ -195,6 +195,7 @@ def get_valid_set_options():
+                'use_ssl_unverified_context':(None,None,boollist),
+                'use_cloudscraper':(None,None,boollist),
+                'use_basic_cache':(None,None,boollist),
++               'use_fanfictionnet_ff_proxy':(None,None,boollist),
+ 
+                ## currently, browser_cache_path is assumed to be
+                ## shared and only ffnet uses it so far
+@@ -480,6 +481,7 @@ def get_valid_keywords():
+                  'use_basic_cache',
+                  'use_browser_cache',
+                  'use_browser_cache_only',
++                 'use_fanfictionnet_ff_proxy',
+                  'browser_cache_path',
+                  'browser_cache_age_limit',
+                  'user_agent',
+@@ -977,8 +979,11 @@ class Configuration(ConfigParser):
+             # save and re-apply cookiejar when make_new.
+         if not self.fetcher or make_new:
+             logger.debug("use_cloudscraper:%s"%self.getConfig('use_cloudscraper'))
++            logger.debug("use_fanfictionnet_ff_proxy:%s"%self.getConfig('use_fanfictionnet_ff_proxy'))
+             if self.getConfig('use_cloudscraper',False):
+                 fetchcls = fetcher.CloudScraperFetcher
++            elif self.getConfig('use_fanfictionnet_ff_proxy',False):
++                fetchcls = fetcher.FanFiction_FF_ProxyFetcher
+             else:
+                 fetchcls = fetcher.RequestsFetcher
+             self.fetcher = fetchcls(self.getConfig,
+diff --git a/fanficfare/fetcher.py b/fanficfare/fetcher.py
+index 2a934898..422186f9 100644
+--- a/fanficfare/fetcher.py
++++ b/fanficfare/fetcher.py
+@@ -54,6 +54,8 @@ from requests_file import FileAdapter
+ import cloudscraper
+ from cloudscraper.exceptions import CloudflareException
+ 
++import socket
++
+ from . import exceptions
+ 
+ ## makes requests/cloudscraper dump req/resp headers.
+@@ -515,6 +517,48 @@ class CloudScraperFetcher(RequestsFetcher):
+             msg = unicode(cfe).replace(' in the opensource (free) version','...')
+             raise exceptions.FailedToDownload('cloudscraper reports: "%s"'%msg)
+ 
++class FanFiction_FF_ProxyFetcher(RequestsFetcher):
++    def __init__(self,getConfig_fn,getConfigList_fn):
++        super(FanFiction_FF_ProxyFetcher,self).__init__(getConfig_fn,getConfigList_fn)
++
++    def request(self,method,url,headers=None,parameters=None):
++        if method != 'GET':
++            raise NotImplementedError()            
++
++        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
++        s.connect(("127.0.0.1", 8888))
++        logger.debug('Sending URL to socket')
++        sent = s.sendall(url.encode('utf-8'))
++        if sent == 0:
++            logging.debug('Connection lost during sending')
++
++        header = s.recv(4096)
++        size_expected = int(header.decode('utf-8').split('\n')[0])
++        logger.debug('Expecting %i bytes', size_expected)
++
++        chunks = []
++        bytes_recd = 0
++
++        while bytes_recd < size_expected:
++            chunk = s.recv(4096)
++            #logger.debug('Receiving %i bytes from socket', bytes_recd)
++            if chunk == b'':
++                logging.debug('Connection closed by remote host')
++                break
++            chunks.append(chunk)
++            bytes_recd = bytes_recd + len(chunk)
++        logger.debug('Closing connection after %i bytes', bytes_recd)
++
++        s.close()
++
++        content = b''.join(chunks).decode("utf-8")
++
++        logger.debug('Start of HTML tag: %s || End of HTML tag: %s', content.startswith('<html'), content.endswith('</html>'))
++        return FetcherResponse(content,
++                                   url,
++                                   False)
++
++
+ # .? for AO3's ']' in param names.
+ safe_url_re = re.compile(r'(?P<attr>(pass(word)?|name|login).?=)[^&]*(?P<amp>&|$)',flags=re.MULTILINE)
+ def safe_url(url):

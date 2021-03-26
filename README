@@ -15,3 +15,7 @@ It drive Firefox through Selenium.
 
 Do this a first time so cookie.json is initialized
 Control+C quit the browser, do it twice to quit the software
+
+Current patch list:
+*   fff_03b93bb9d7cd77cd4e92eeee93095a9223ba3c71.patch is for FanFicFare git rev 03b93bb9d7cd77cd4e92eeee93095a9223ba3c71
+*   fff.patch is for FanFicFare git rev 175b4728d6b1cd6e63e3f91a7a32a823ad942e77
