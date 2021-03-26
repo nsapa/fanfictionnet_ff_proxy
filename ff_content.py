@@ -150,6 +150,8 @@ def cloudfare_clickcaptcha():
 def get_image_content_as_bytes(driver, uri):
     logger = logging.getLogger(name="get_image_content_as_bytes")
     # From https://stackoverflow.com/questions/47424245/how-to-download-an-image-with-python-3-selenium-if-the-url-begins-with-blob/47425305#47425305
+    # This function is licensed under Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
+    # Original author: Florent B. // https://stackoverflow.com/users/2887618/florent-b
     result = driver.execute_async_script(
         """
     var uri = arguments[0];
