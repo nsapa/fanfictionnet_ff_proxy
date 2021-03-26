@@ -1,1 +1,3 @@
 *.pyc
+geckodriver.log
+selenium-firefox-proxy.log
