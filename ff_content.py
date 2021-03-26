@@ -25,6 +25,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
+__software__ = "fanfictionnet_ff_proxy"
 __version__ = "0.1"
 __maintainer__ = "Nicolas SAPA"
 __email__ = "nico@byme.at"
@@ -41,6 +42,7 @@ def prepare_firefox():
     service_log_path = './geckodriver.log' if args.verbose else '/dev/null'
 
     try:
+        logging.info('Initializing Firefox...')
         driver = webdriver.Firefox(service_log_path=service_log_path)
     except Exception as e:
         logger.error("Failed to initialize Firefox: %s", e.message)
@@ -222,7 +224,7 @@ if __name__ == "__main__":
     # Defaults value
     log_level = logging.DEBUG if args.verbose else logging.INFO
     if args.write_log:
-        log_filename = 'selenium-firefox-proxy.log'
+        log_filename = '{}.log'.format(__software__)
         if args.log_filename is not None:
             log_filename = args.log_filename
     '''
@@ -255,7 +257,7 @@ if __name__ == "__main__":
         log_file_handler.setFormatter(log_formatter)
         root_logger.addHandler(log_file_handler)
 
-    logging.info("selenium-firefox-proxy version %s by %s <%s>", __version__,
+    logging.info("%s version %s by %s <%s>", __software__, __version__,
                  __author__, __email__)
     logging.info("This %s software is licensed under %s", __status__,
                  __license__)
@@ -264,6 +266,7 @@ if __name__ == "__main__":
     if driver is False:
         logging.error('Initializing Firefox failed, exiting')
         exit(1)
+    logging.info('Firefox is initialized & ready to works')
 
     signal.signal(signal.SIGINT, sigint_handler)
 
@@ -277,6 +280,7 @@ if __name__ == "__main__":
         logging.error('Bind failed: %s', e.message)
         exit(3)
     serversocket.listen(5)
+    logging.info('Ready to accept command!')
 
     time_last_cookie_dump = time.monotonic()
 
