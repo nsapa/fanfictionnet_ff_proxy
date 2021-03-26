@@ -8,7 +8,7 @@ It drive Firefox through Selenium.
 * Run python3 ./ff_content.py
 * When you see "INFO root Will listen on port 8888", the code is initialized
 * To use: echo https://www.fanfiction.net/s/10273521/1/Songbird |nc 127.0.0.1 8888
---> You should get back the source code of this URL and the socket will be disconnected
+--> You should get back the some header then the content of the URL and the socket will be disconnected
 
 /!\ If you see "Complete the captcha then press enter", switch to the Firefox window and do the captcha.
 ¨¨    Press Enter when you're done, the page will reload and you should see the source code of the URL you request
@@ -17,5 +17,11 @@ Do this a first time so cookie.json is initialized
 Control+C quit the browser, do it twice to quit the software
 
 Current patch list:
-*   fff_03b93bb9d7cd77cd4e92eeee93095a9223ba3c71.patch is for FanFicFare git rev 03b93bb9d7cd77cd4e92eeee93095a9223ba3c71
-*   fff.patch is for FanFicFare git rev 175b4728d6b1cd6e63e3f91a7a32a823ad942e77
+*   fff_03b93bb9d7cd77cd4e92eeee93095a9223ba3c71.patch is for FanFicFare git rev 03b93bb9d7cd77cd4e92eeee93095a9223ba3c71 (Sun Mar 21 10:13:53 2021 -0500)
+*   fff.patch is for FanFicFare git rev 175b4728d6b1cd6e63e3f91a7a32a823ad942e77 (Fri Nov 6 11:04:04 2020 -0600)
+
+On the latest revision, you need to edit FanFicFare' personal.ini to enable this proxy:
+[www.fanfiction.net]
+use_fanfictionnet_ff_proxy:true
+use_cloudscraper:false
+
