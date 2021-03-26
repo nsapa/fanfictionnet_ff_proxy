@@ -2,3 +2,15 @@ Very hacky/buggy code - DO NOT USE.
 
 This code (with the included very hacky patch for FanFicFare) permit a manual bypass of the CloudFare captcha for FanFiction.net
 It drive Firefox through Selenium.
+
+*** USAGE ***
+* Run python3 ./ff_content.py
+* When you see "INFO root Will listen on port 8888", the code is initialized
+* To use: echo https://www.fanfiction.net/s/10273521/1/Songbird |nc 127.0.0.1 8888
+--> You should get back the source code of this URL and the socket will be disconnected
+
+/!\ If you see "Complete the captcha then press enter", switch to the Firefox window and do the captcha.
+¨¨    Press Enter when you're done, the page will reload and you should see the source code of the URL you request
+
+Do this a first time so cookie.json is initialized
+Control+C quit the browser but python hang -- WIP
