@@ -66,7 +66,7 @@ def prepare_firefox():
     input('Please resolve some captcha to get credits then press enter')
 
     with open(cookie_store, 'wb') as cookie_file:
-        logger.debug('Dumping cookies to %s', cookie_file)
+        logger.debug('Dumping cookies to %s', cookie_store)
         json.dump(driver.get_cookies(),
                   codecs.getwriter('utf-8')(cookie_file),
                   ensure_ascii=False,
