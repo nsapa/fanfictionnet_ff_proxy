@@ -66,6 +66,9 @@ def prepare_firefox():
             prefix = "http://"
             if cookie['domain'].startswith('.'):
                 prefix = "http://www"
+            if cookie['domain'].startswith('.www.'):  #Yes, it happened...
+                prefix = "http://"
+                cookie['domain'] = cookie['domain'].replace('.www.', 'www.')
 
             driver.get('{}{}'.format(prefix, cookie['domain']))
             driver.add_cookie(cookie)
@@ -119,7 +122,7 @@ def sigint_handler(signal, frame):
     logger.info('Got SIGINT, breaking the main loop...')
     global stay_in_mainloop
     stay_in_mainloop = 0
-    return
+    return True
 
 
 def cloudfare_clickcaptcha():
@@ -223,6 +226,7 @@ if __name__ == "__main__":
     logging.info('Will listen on port %i', args.port)
 
     serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         serversocket.bind(('127.0.0.1', args.port))
     except Exception as e:
@@ -239,20 +243,15 @@ if __name__ == "__main__":
 
         (clientsocket, s_address) = serversocket.accept()
 
-        chunks = []
-        bytes_recd = 0
-        MSGLEN = 4096  #Should be enough for any URL
-        while bytes_recd < MSGLEN:
-            chunk = clientsocket.recv(min(MSGLEN - bytes_recd, 2048))
-            if chunk == b'':
-                logging.debug('Connection closed by the client %s:%i',
-                              s_address[0], s_address[1])
+        buffer_length = 1024
+        message_complete = False
+        while not message_complete:
+            data_from_client = clientsocket.recv(buffer_length)
+            if len(data_from_client) < buffer_length:
                 break
-            chunks.append(chunk)
-            bytes_recd = bytes_recd + len(chunk)
-        data_from_client = b''.join(chunks)
 
-        logging.debug('Received data from client: %s', repr(data_from_client))
+        logging.debug('Received data from client %s:%i: %s', s_address[0],
+                      s_address[1], repr(data_from_client))
         new_url = data_from_client.decode("utf-8").strip('\n')
 
         driver.get(new_url)
@@ -279,11 +278,14 @@ if __name__ == "__main__":
                     logging.debug('Accepted an alert')
                 cookie_dump()
 
-        clientsocket.send(driver.page_source.encode('utf-8'))
+        clientsocket.send(
+            str(len(driver.page_source.encode('utf-8'))).encode('utf-8') +
+            b"\n")  #len
+        clientsocket.sendall(driver.page_source.encode('utf-8'))
         clientsocket.close()
 
         time.sleep(2)
 
     serversocket.close()
     cleanup()
-    exit()
+    exit(0)

@@ -1,0 +1,4 @@
+Very hacky/buggy code - DO NOT USE.
+
+This code (with the included very hacky patch for FanFicFare) permit a manual bypass of the CloudFare captcha for FanFiction.net
+It drive Firefox through Selenium.
