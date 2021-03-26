@@ -14,7 +14,12 @@ import collections
 import hashlib
 import json
 import signal
+import random
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
@@ -64,7 +69,7 @@ def prepare_firefox():
             driver.get('{}{}'.format(prefix, cookie['domain']))
             driver.add_cookie(cookie)
         logger.debug('Added %i cookie(s)', len(cookies))
-
+    """ Don't seem to work
     try:
         addon_id = driver.install_addon(os.path.abspath(extension_path))
     except Exception as e:
@@ -80,7 +85,7 @@ def prepare_firefox():
         return False
 
     input('Please resolve some captcha to get credits then press enter')
-
+    """
     return driver
 
 
@@ -114,6 +119,23 @@ def sigint_handler(signal, frame):
     global stay_in_mainloop
     stay_in_mainloop = 0
     return
+
+
+def cloudfare_clickcaptcha():
+    # Try to validate hCaptcha
+    logger = logging.getLogger(name="cloudfare_clickcaptcha")
+
+    input("Complete the captcha then press enter")
+
+    timeout = 10
+    try:
+        # FIXME: hardcoded element for fanfiction.net
+        element_present = EC.presence_of_element_located((By.ID, 'storytext'))
+        WebDriverWait(driver, timeout).until(element_present)
+    except TimeoutException:
+        logger.error('Failed to load the story text')
+
+    return True
 
 
 class CustomFormatter(logging.Formatter):
@@ -189,14 +211,33 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGINT, sigint_handler)
 
-    logging.info('Break here')
-
     time_last_cookie_dump = time.monotonic()
+
+    ff_chapter = 1
 
     while (stay_in_mainloop):
         if (time.monotonic() - time_last_cookie_dump) > 60:
             cookie_dump()
-        pass
+            time_last_cookie_dump = time.monotonic()
+
+        driver.get('https://www.fanfiction.net/s/10273521/{}/Songbird'.format(
+            ff_chapter))
+
+        logging.info('Current URL = %s, page title = %s', driver.current_url,
+                     driver.title)
+
+        if driver.title.startswith('Attention Required!'):
+            if cloudfare_clickcaptcha():
+                driver.refresh()
+                logging.info('Current URL = %s, page title = %s',
+                             driver.current_url, driver.title)
+                cookie_dump()
+
+        ff_chapter += 1
+        if ff_chapter > 17:
+            cookie_dump()
+            break
+        time.sleep(2)
 
     cleanup()
     exit()
