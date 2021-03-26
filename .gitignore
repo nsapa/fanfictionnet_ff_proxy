@@ -1,3 +1,4 @@
 *.pyc
 geckodriver.log
 selenium-firefox-proxy.log
+cookie.json

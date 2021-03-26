@@ -12,6 +12,8 @@ import sys
 import platform
 import collections
 import hashlib
+import json
+import signal
 from selenium import webdriver
 
 __author__ = "Nicolas SAPA"
@@ -20,6 +22,8 @@ __version__ = "0.1"
 __maintainer__ = "Nicolas SAPA"
 __email__ = "nico@byme.at"
 __status__ = "Alpha"
+
+stay_in_mainloop = 1
 
 
 def prepare_firefox():
@@ -34,6 +38,13 @@ def prepare_firefox():
                  driver.capabilities['browserVersion'],
                  driver.capabilities['platformName'],
                  driver.capabilities['moz:processID'])
+
+    cookies = list()
+    try:
+        with open(cookie_store, 'r') as cookie_file:
+            cookies = json.load(codecs.getwriter('utf-8')(cookie_file))
+    except:
+        logger.debug('No cookies found to import')
 
     try:
         addon_id = driver.install_addon(os.path.abspath(extension_path))
@@ -51,7 +62,31 @@ def prepare_firefox():
 
     input('Please resolve some captcha to get credits then press enter')
 
+    with open(cookie_store, 'wb') as cookie_file:
+        logger.debug('Dumping cookies to %s', cookie_file)
+        json.dump(driver.get_cookies(),
+                  codecs.getwriter('utf-8')(cookie_file),
+                  ensure_ascii=False,
+                  indent=4)
+
     return driver
+
+
+def cleanup():
+    logger = logging.getLogger(name="cleanup")
+    try:
+        driver.quit()
+    except Exception as e:
+        logger.error('Cleanup failed: %s', e.message)
+    return
+
+
+def sigint_handler(signal, frame):
+    logger = logging.getLogger(name="signal_handler")
+    logger.info('Got SIGINT, breaking the main loop...')
+    global stay_in_mainloop
+    stay_in_mainloop = 0
+    return
 
 
 class CustomFormatter(logging.Formatter):
@@ -74,6 +109,8 @@ if __name__ == "__main__":
 
     p.add_argument('--log-filename', help='Path to the log file')
 
+    p.add_argument('--cookie-filename', help='Path to the cookie store')
+
     p.add_argument('--extension-path', help='Path to the XPI of Privacy Pass')
 
     args = p.parse_args()
@@ -88,6 +125,10 @@ if __name__ == "__main__":
     extension_path = './privacy_pass-2.0.8-fx.xpi'
     if args.extension_path is not None:
         extension_path = args.extension_path
+
+    cookie_store = './cookie.json'
+    if args.cookie_filename is not None:
+        cookie_store = args.cookie_filename
 
     # Setup logging
     root_logger = logging.getLogger()
@@ -119,4 +160,10 @@ if __name__ == "__main__":
         logging.error('Initializing Firefox failed, exiting')
         exit(1)
 
+    signal.signal(signal.SIGINT, sigint_handler)
+
     logging.info('Break here')
+    while (stay_in_mainloop):
+        pass
+    cleanup()
+    exit()
