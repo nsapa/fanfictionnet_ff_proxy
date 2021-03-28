@@ -39,7 +39,7 @@ def prepare_firefox():
     # Initialize Firefox & load the cookie store
     logger = logging.getLogger(name="prepare_firefox")
 
-    service_log_path = './geckodriver.log' if args.verbose else '/dev/null'
+    service_log_path = './geckodriver.log' if args.verbose else os.devnull
 
     try:
         logging.info('Initializing Firefox...')
