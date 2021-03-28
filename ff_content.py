@@ -269,6 +269,7 @@ if __name__ == "__main__":
             time_last_cookie_dump = time.monotonic()
 
         (clientsocket, s_address) = serversocket.accept()
+        clientsocket.setblocking(True)
 
         buffer_length = 1024
         message_complete = False
