@@ -3,6 +3,7 @@
 
 import argparse
 import codecs
+import colorama
 import datetime
 import logging
 import os
@@ -10,6 +11,7 @@ import re
 import time
 import sys
 import platform
+import plyer
 import collections
 import hashlib
 import json
@@ -22,8 +24,6 @@ from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentE
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import colorama
-import plyer
 
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
@@ -45,16 +45,15 @@ def prepare_firefox():
     service_log_path = './geckodriver.log' if args.verbose else os.devnull
 
     try:
-        logging.info('Initializing Firefox...')
         driver = webdriver.Firefox(service_log_path=service_log_path)
     except Exception as e:
         logger.error("Failed to initialize Firefox: %s", str(e))
         return False
 
-    logger.debug('Firefox %s on %s have started (pid = %i)',
-                 driver.capabilities['browserVersion'],
-                 driver.capabilities['platformName'],
-                 driver.capabilities['moz:processID'])
+    logger.info('Firefox %s on %s have started (pid = %i)',
+                driver.capabilities['browserVersion'],
+                driver.capabilities['platformName'],
+                driver.capabilities['moz:processID'])
 
     try:
         driver.get('http://www.example.com')
@@ -337,6 +336,7 @@ if __name__ == "__main__":
                  __author__, __email__)
     logging.info("This %s software is licensed under %s", __status__,
                  __license__)
+    logging.info('Running on %s', platform.platform())
 
     driver = prepare_firefox()
     if driver is False:
@@ -344,7 +344,24 @@ if __name__ == "__main__":
         exit(1)
     logging.info('Firefox is initialized & ready to works')
 
-    signal.signal(signal.SIGINT, sigint_handler)
+    ## Signals handler
+    # On Unix, Control + C is SIGINT
+    try:
+        signal.signal(signal.SIGINT, sigint_handler)
+    except Exception as e:
+        logging.error('Failed to install SIGINT handler: %s', str(e))
+    # On Windows, it isn't
+    if platform.system() == 'Windows':
+        try:
+            signal.signal(signal.CTRL_C_EVENT, sigint_handler)
+        except Exception as e:
+            logging.error('Failed to install Windows\'s CONTROL+C handler: %s',
+                          str(e))
+    # Someone closed the terminal
+    try:
+        signal.signal(signal.SIGHUP, sigint_handler)
+    except Exception as e:
+        logging.error('Failed to install SIGHUP handler: %s', str(e))
 
     serversocket = None
     try:
