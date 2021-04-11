@@ -36,9 +36,11 @@ __status__ = "Alpha"
 stay_in_mainloop = 1
 exit_triggered = 0
 time_last_cookie_dump = time.monotonic()
+firefox_pid = None
 
 
 def prepare_firefox():
+    global firefox_pid
     # Initialize Firefox & load the cookie store
     logger = logging.getLogger(name="prepare_firefox")
 
@@ -54,6 +56,9 @@ def prepare_firefox():
                 driver.capabilities['browserVersion'],
                 driver.capabilities['platformName'],
                 driver.capabilities['moz:processID'])
+
+    # Store Firefox' pid for last ressort cleanup
+    firefox_pid = driver.capabilities['moz:processID']
 
     try:
         driver.get('http://www.example.com')
@@ -97,17 +102,19 @@ def cookie_dump():
     return
 
 
-def sigint_handler(signal, frame):
+def unix_exit_handler(mysignal, myframe):
     global exit_triggered
     global stay_in_mainloop
 
-    logger = logging.getLogger(name="signal_handler")
+    logger = logging.getLogger(name="unix_exit_handler")
 
     if exit_triggered == 1:
-        logger.info('Got SIGINT a second time, exiting')
+        logger.info('Got %s a second time, exiting',
+                    signal.strsignal(mysignal))
         sys.exit(4)
 
-    logger.info('Got SIGINT, telling the main loop to exit...')
+    logger.info('Got %s, telling the main loop to exit...',
+                signal.strsignal(mysignal))
     stay_in_mainloop = 0
     exit_triggered = 1
 
@@ -117,6 +124,13 @@ def sigint_handler(signal, frame):
 
     logging.getLogger('urllib3.connectionpool').setLevel(
         logging.CRITICAL)  #Don't show error from selenium
+
+    return True
+
+
+def win32_exit_handler(mysignal):
+    #Fake a SIGINT
+    unix_exit_handler(signal.SIGINT, None)
 
     return True
 
@@ -310,6 +324,9 @@ if __name__ == "__main__":
     if args.cookie_filename is not None:
         cookie_store = args.cookie_filename
 
+    # Load colorama (it will patch some function on Windows)
+    colorama.init()
+
     # Setup logging
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
@@ -330,8 +347,6 @@ if __name__ == "__main__":
         log_file_handler.setFormatter(log_formatter)
         root_logger.addHandler(log_file_handler)
 
-    colorama.init()
-
     logging.info("%s version %s by %s <%s>", __software__, __version__,
                  __author__, __email__)
     logging.info("This %s software is licensed under %s", __status__,
@@ -347,21 +362,25 @@ if __name__ == "__main__":
     ## Signals handler
     # On Unix, Control + C is SIGINT
     try:
-        signal.signal(signal.SIGINT, sigint_handler)
+        signal.signal(signal.SIGINT, unix_exit_handler)
     except Exception as e:
         logging.error('Failed to install SIGINT handler: %s', str(e))
-    # On Windows, it isn't
-    if platform.system() == 'Windows':
-        try:
-            signal.signal(signal.CTRL_C_EVENT, sigint_handler)
-        except Exception as e:
-            logging.error('Failed to install Windows\'s CONTROL+C handler: %s',
-                          str(e))
     # Someone closed the terminal
     try:
-        signal.signal(signal.SIGHUP, sigint_handler)
+        signal.signal(signal.SIGHUP, unix_exit_handler)
     except Exception as e:
         logging.error('Failed to install SIGHUP handler: %s', str(e))
+
+    # Windows is different
+    if platform.system() == 'Windows':
+        import win32api  #not used anywhere else
+
+        try:
+            win32api.SetConsoleCtrlHandler(win32_exit_handler, True)
+        except Exception as e:
+            logging.error('Call to SetConsoleCtrlHandler failed: %s', str(e))
+
+    ## Time to create the server socket
 
     serversocket = None
     try:
@@ -369,15 +388,21 @@ if __name__ == "__main__":
         serversocket = socket.create_server((args.address, args.port),
                                             family=socket.AF_INET,
                                             dualstack_ipv6=False,
-                                            reuse_port=True,
+                                            reuse_port=False,
                                             backlog=0)
     except Exception as e:
-        logging.error(
-            'Cannot create a TCP server with the current parameters: %s',
-            str(e))
+        logging.error('Cannot create a TCP server: %s', str(e))
         driver.quit(
         )  #Try to keep the user computer clean without any lingering geckodriver
         exit(3)
+
+    try:
+        serversocket.setsockopt(
+            socket.SOL_SOCKET, socket.SO_REUSEADDR, 1
+        )  #SO_REUSEADDR work on Windows but socket.create_server doesn't know that...
+    except Exception as e:
+        logging.error('Failed to set SO_REUSEADDR on the server socket: %s',
+                      str(e))
 
     logging.info(
         'Listening on ' + colorama.Style.BRIGHT + '%s:%i' +
@@ -401,9 +426,14 @@ if __name__ == "__main__":
 
     logging.info('Quitting selenium ...')
     try:
+        driver.close()
         driver.quit()
     except Exception as e:
-        logger.error('Quitting selenium failed: %s', str(e))
+        logging.error('Quitting selenium failed: %s', str(e))
+        if type(firefox_pid) == int:
+            logging.info('Killing pid %i as last ressort cleanup.',
+                         firefox_pid)
+            os.kill(firefox_pid, signal.SIGTERM)
 
     logging.info('Exiting...')
     sys.exit(0)
