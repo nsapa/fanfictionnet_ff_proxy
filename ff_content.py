@@ -22,6 +22,8 @@ from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentE
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import colorama
+import plyer
 
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
@@ -128,7 +130,15 @@ def cloudfare_clickcaptcha():
     # Try to validate hCaptcha
     logger = logging.getLogger(name="cloudfare_clickcaptcha")
 
-    input("Complete the captcha then press enter")
+    notify_user(
+        'Captcha detected by {}'.format(__software__),
+        'Please complete the captcha in Firefox then press Enter in the python console'
+    )
+    logger.info(colorama.Fore.RED +
+                'Waiting for user to resolve the captcha: press ' +
+                colorama.Style.BRIGHT + 'Enter' + colorama.Style.NORMAL +
+                ' to continue' + colorama.Style.RESET_ALL)
+    input()
 
     timeout = 10
     try:
@@ -179,6 +189,11 @@ def get_document_content_type(driver):
     return result
 
 
+def notify_user(title, message):
+    plyer.notification.notify(title, message, timeout=999)
+    return
+
+
 class CustomFormatter(logging.Formatter):
     def formatTime(self, record, datefmt=None):
         if '%f' in datefmt:
@@ -201,7 +216,13 @@ if __name__ == "__main__":
 
     p.add_argument('--cookie-filename', help='Path to the cookie store')
 
-    p.add_argument('--port', type=int, default=8888, help='TCP port listened')
+    p.add_argument('--address',
+                   default='127.0.0.1',
+                   help='Listen on address (default 127.0.0.1)')
+    p.add_argument('--port',
+                   type=int,
+                   default=8888,
+                   help='Listen on tcp port (default 8888)')
 
     args = p.parse_args()
 
@@ -236,6 +257,8 @@ if __name__ == "__main__":
         log_file_handler.setFormatter(log_formatter)
         root_logger.addHandler(log_file_handler)
 
+    colorama.init()
+
     logging.info("%s version %s by %s <%s>", __software__, __version__,
                  __author__, __email__)
     logging.info("This %s software is licensed under %s", __status__,
@@ -249,7 +272,9 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGINT, sigint_handler)
 
-    logging.info('Will listen on port %i', args.port)
+    logging.info(
+        'Will listen on port ' + colorama.Style.BRIGHT + '%i' +
+        colorama.Style.RESET_ALL, args.port)
 
     serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -293,8 +318,13 @@ if __name__ == "__main__":
         url_type = get_document_content_type(driver)
 
         try:
-            logging.info('Current URL = %s, page title = %s, mimetype = %s',
-                         driver.current_url, driver.title, url_type)
+            logging.info(
+                'Current URL = ' + colorama.Style.BRIGHT + '%s' +
+                colorama.Style.NORMAL + ', page title = ' +
+                colorama.Style.BRIGHT + '%s' + colorama.Style.NORMAL +
+                ', mimetype = ' + colorama.Style.BRIGHT + '%s' +
+                colorama.Style.RESET_ALL, driver.current_url, driver.title,
+                url_type)
         except UnexpectedAlertPresentException:
             driver.switch_to.alert.accept()
 
@@ -304,8 +334,12 @@ if __name__ == "__main__":
                 url_type = get_document_content_type(driver)
                 try:
                     logging.info(
-                        'Current URL = %s, page title = %s, mimetype = %s',
-                        driver.current_url, driver.title, url_type)
+                        'Current URL = ' + colorama.Style.BRIGHT + '%s' +
+                        colorama.Style.NORMAL + ', page title = ' +
+                        colorama.Style.BRIGHT + '%s' + colorama.Style.NORMAL +
+                        ', mimetype = ' + colorama.Style.BRIGHT + '%s' +
+                        colorama.Style.RESET_ALL, driver.current_url,
+                        driver.title, url_type)
                 except UnexpectedAlertPresentException:
                     driver.switch_to.alert.accept()
                     logging.debug('Accepted an alert')
