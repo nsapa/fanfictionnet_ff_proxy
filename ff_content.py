@@ -28,13 +28,14 @@ import plyer
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
 __software__ = "fanfictionnet_ff_proxy"
-__version__ = "0.1"
+__version__ = "0.2"
 __maintainer__ = "Nicolas SAPA"
 __email__ = "nico@byme.at"
 __status__ = "Alpha"
 
 stay_in_mainloop = 1
 exit_triggered = 0
+time_last_cookie_dump = time.monotonic()
 
 
 def prepare_firefox():
@@ -47,7 +48,7 @@ def prepare_firefox():
         logging.info('Initializing Firefox...')
         driver = webdriver.Firefox(service_log_path=service_log_path)
     except Exception as e:
-        logger.error("Failed to initialize Firefox: %s", e.message)
+        logger.error("Failed to initialize Firefox: %s", str(e))
         return False
 
     logger.debug('Firefox %s on %s have started (pid = %i)',
@@ -58,7 +59,7 @@ def prepare_firefox():
     try:
         driver.get('http://www.example.com')
     except Exception as e:
-        logger.error('Cannot navigate to example.com: %s', e.message)
+        logger.error('Cannot navigate to example.com: %s', str(e))
         return False
 
     cookies = list()
@@ -94,17 +95,6 @@ def cookie_dump():
                   codecs.getwriter('utf-8')(cookie_file),
                   ensure_ascii=False,
                   indent=4)
-
-    return
-
-
-def cleanup():
-    # Try to close properly the driven browser
-    logger = logging.getLogger(name="cleanup")
-    try:
-        driver.quit()
-    except Exception as e:
-        logger.error('Cleanup failed: %s', e.message)
     return
 
 
@@ -118,10 +108,16 @@ def sigint_handler(signal, frame):
         logger.info('Got SIGINT a second time, exiting')
         sys.exit(4)
 
-    logger.info('Got SIGINT, breaking the main loop...')
-
+    logger.info('Got SIGINT, telling the main loop to exit...')
     stay_in_mainloop = 0
     exit_triggered = 1
+
+    logging.info(colorama.Style.BRIGHT + 'Forcing' + colorama.Style.NORMAL +
+                 ' the server socket to close.')
+    serversocket.close()
+
+    logging.getLogger('urllib3.connectionpool').setLevel(
+        logging.CRITICAL)  #Don't show error from selenium
 
     return True
 
@@ -191,6 +187,84 @@ def get_document_content_type(driver):
 
 def notify_user(title, message):
     plyer.notification.notify(title, message, timeout=999)
+    return
+
+
+def mainloop():
+    global time_last_cookie_dump
+    logger = logging.getLogger(name="mainloop")
+
+    if (time.monotonic() - time_last_cookie_dump) > 60:
+        cookie_dump()
+        time_last_cookie_dump = time.monotonic()
+
+    (clientsocket, s_address) = serversocket.accept()
+    clientsocket.setblocking(True)
+
+    buffer_length = 1024
+    message_complete = False
+    while not message_complete:
+        data_from_client = clientsocket.recv(buffer_length)
+        if len(data_from_client) < buffer_length:
+            break
+
+    logger.debug('Received data from client %s:%i: %s', s_address[0],
+                 s_address[1], repr(data_from_client))
+    new_url = data_from_client.decode("utf-8").strip('\n')
+    url_type = None
+
+    driver.get(new_url)
+
+    try:
+        driver.refresh()
+    except UnexpectedAlertPresentException:
+        driver.switch_to.alert.accept()
+
+    url_type = get_document_content_type(driver)
+
+    try:
+        logger.info(
+            'Current URL = ' + colorama.Style.BRIGHT + '%s' +
+            colorama.Style.NORMAL + ', page title = ' + colorama.Style.BRIGHT +
+            '%s' + colorama.Style.NORMAL + ', mimetype = ' +
+            colorama.Style.BRIGHT + '%s' + colorama.Style.RESET_ALL,
+            driver.current_url, driver.title, url_type)
+    except UnexpectedAlertPresentException:
+        driver.switch_to.alert.accept()
+
+    if driver.title.startswith('Attention Required!'):
+        if cloudfare_clickcaptcha():
+            driver.get(new_url)
+            url_type = get_document_content_type(driver)
+            try:
+                logger.info(
+                    'Current URL = ' + colorama.Style.BRIGHT + '%s' +
+                    colorama.Style.NORMAL + ', page title = ' +
+                    colorama.Style.BRIGHT + '%s' + colorama.Style.NORMAL +
+                    ', mimetype = ' + colorama.Style.BRIGHT + '%s' +
+                    colorama.Style.RESET_ALL, driver.current_url, driver.title,
+                    url_type)
+            except UnexpectedAlertPresentException:
+                driver.switch_to.alert.accept()
+                logging.debug('Accepted an alert')
+            cookie_dump()
+
+    document_type = 'binary'
+    if url_type == 'text/html':
+        document_type = 'text'
+        document_as_bytes = driver.page_source.encode('utf-8')
+    if url_type.startswith('image/'):
+        document_type = 'image'
+        document_as_bytes = get_image_content_as_bytes(driver,
+                                                       driver.current_url)
+
+    clientsocket.send(
+        str(len(document_as_bytes)).encode('utf-8') + b'||' +
+        document_type.encode('utf-8') + b"$END_OF_HEADER$")  #len
+    clientsocket.sendall(document_as_bytes)
+    clientsocket.close()
+
+    time.sleep(2)
     return
 
 
@@ -272,96 +346,47 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGINT, sigint_handler)
 
-    logging.info(
-        'Will listen on port ' + colorama.Style.BRIGHT + '%i' +
-        colorama.Style.RESET_ALL, args.port)
-
-    serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    serversocket = None
     try:
-        serversocket.bind(('127.0.0.1', args.port))
+        # Create a server socket
+        serversocket = socket.create_server((args.address, args.port),
+                                            family=socket.AF_INET,
+                                            dualstack_ipv6=False,
+                                            reuse_port=True,
+                                            backlog=0)
     except Exception as e:
-        logging.error('Bind failed: %s', e.message)
+        logging.error(
+            'Cannot create a TCP server with the current parameters: %s',
+            str(e))
+        driver.quit(
+        )  #Try to keep the user computer clean without any lingering geckodriver
         exit(3)
-    serversocket.listen(5)
-    logging.info('Ready to accept command!')
 
-    time_last_cookie_dump = time.monotonic()
+    logging.info(
+        'Listening on ' + colorama.Style.BRIGHT + '%s:%i' +
+        colorama.Style.RESET_ALL,
+        serversocket.getsockname()[0],
+        serversocket.getsockname()[1])
 
     while (stay_in_mainloop):
-        if (time.monotonic() - time_last_cookie_dump) > 60:
-            cookie_dump()
-            time_last_cookie_dump = time.monotonic()
-
-        (clientsocket, s_address) = serversocket.accept()
-        clientsocket.setblocking(True)
-
-        buffer_length = 1024
-        message_complete = False
-        while not message_complete:
-            data_from_client = clientsocket.recv(buffer_length)
-            if len(data_from_client) < buffer_length:
-                break
-
-        logging.debug('Received data from client %s:%i: %s', s_address[0],
-                      s_address[1], repr(data_from_client))
-        new_url = data_from_client.decode("utf-8").strip('\n')
-        url_type = None
-
-        driver.get(new_url)
-
         try:
-            driver.refresh()
-        except UnexpectedAlertPresentException:
-            driver.switch_to.alert.accept()
+            mainloop()
+        except Exception as e:
+            if exit_triggered:
+                #The way we quit is ... not the python way.
+                logging.debug(
+                    'Exception in the main loop probably because we are quitting (exit_triggered is 1). Message: %s',
+                    str(e))
+            else:
+                logging.error('Exception in the main loop: %s', str(e))
 
-        url_type = get_document_content_type(driver)
+    serversocket.close()  #Should already have happened
 
-        try:
-            logging.info(
-                'Current URL = ' + colorama.Style.BRIGHT + '%s' +
-                colorama.Style.NORMAL + ', page title = ' +
-                colorama.Style.BRIGHT + '%s' + colorama.Style.NORMAL +
-                ', mimetype = ' + colorama.Style.BRIGHT + '%s' +
-                colorama.Style.RESET_ALL, driver.current_url, driver.title,
-                url_type)
-        except UnexpectedAlertPresentException:
-            driver.switch_to.alert.accept()
+    logging.info('Quitting selenium ...')
+    try:
+        driver.quit()
+    except Exception as e:
+        logger.error('Quitting selenium failed: %s', str(e))
 
-        if driver.title.startswith('Attention Required!'):
-            if cloudfare_clickcaptcha():
-                driver.get(new_url)
-                url_type = get_document_content_type(driver)
-                try:
-                    logging.info(
-                        'Current URL = ' + colorama.Style.BRIGHT + '%s' +
-                        colorama.Style.NORMAL + ', page title = ' +
-                        colorama.Style.BRIGHT + '%s' + colorama.Style.NORMAL +
-                        ', mimetype = ' + colorama.Style.BRIGHT + '%s' +
-                        colorama.Style.RESET_ALL, driver.current_url,
-                        driver.title, url_type)
-                except UnexpectedAlertPresentException:
-                    driver.switch_to.alert.accept()
-                    logging.debug('Accepted an alert')
-                cookie_dump()
-
-        document_type = 'binary'
-        if url_type == 'text/html':
-            document_type = 'text'
-            document_as_bytes = driver.page_source.encode('utf-8')
-        if url_type.startswith('image/'):
-            document_type = 'image'
-            document_as_bytes = get_image_content_as_bytes(
-                driver, driver.current_url)
-
-        clientsocket.send(
-            str(len(document_as_bytes)).encode('utf-8') + b'||' +
-            document_type.encode('utf-8') + b"$END_OF_HEADER$")  #len
-        clientsocket.sendall(document_as_bytes)
-        clientsocket.close()
-
-        time.sleep(2)
-
-    serversocket.close()
-    cleanup()
+    logging.info('Exiting...')
     sys.exit(0)
