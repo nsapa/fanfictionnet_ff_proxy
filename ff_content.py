@@ -28,7 +28,7 @@ from selenium.webdriver.support import expected_conditions as EC
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
 __software__ = "fanfictionnet_ff_proxy"
-__version__ = "0.2"
+__version__ = "0.3"
 __maintainer__ = "Nicolas SAPA"
 __email__ = "nico@byme.at"
 __status__ = "Alpha"
@@ -353,6 +353,9 @@ if __name__ == "__main__":
                  __license__)
     logging.info('Running on %s', platform.platform())
 
+    if platform.platform().startswith('Darwin'):
+        logging.critical('This software was not tested on macOS!')
+
     driver = prepare_firefox()
     if driver is False:
         logging.error('Initializing Firefox failed, exiting')
@@ -382,27 +385,23 @@ if __name__ == "__main__":
 
     ## Time to create the server socket
 
-    serversocket = None
+    serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        # Create a server socket
-        serversocket = socket.create_server((args.address, args.port),
-                                            family=socket.AF_INET,
-                                            dualstack_ipv6=False,
-                                            reuse_port=False,
-                                            backlog=0)
-    except Exception as e:
-        logging.error('Cannot create a TCP server: %s', str(e))
-        driver.quit(
-        )  #Try to keep the user computer clean without any lingering geckodriver
-        exit(3)
-
-    try:
-        serversocket.setsockopt(
-            socket.SOL_SOCKET, socket.SO_REUSEADDR, 1
-        )  #SO_REUSEADDR work on Windows but socket.create_server doesn't know that...
+        serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     except Exception as e:
         logging.error('Failed to set SO_REUSEADDR on the server socket: %s',
                       str(e))
+
+    try:
+        serversocket.bind((args.address, args.port))
+    except Exception as e:
+        logging.error('Cannot create a TCP server: %s', str(e))
+        #Try to keep the user computer clean without any lingering geckodriver
+        driver.quit()
+        exit(3)
+
+    # Configure the socket backlog
+    serversocket.listen(5)
 
     logging.info(
         'Listening on ' + colorama.Style.BRIGHT + '%s:%i' +
