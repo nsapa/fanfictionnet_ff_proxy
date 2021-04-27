@@ -21,13 +21,13 @@ import random
 import socket
 import base64
 
+# CECILL-2.1 5.3.4 have a compatibility clause with GPL-3.0
 import undetected_chromedriver as uc
 try:
     uc.install()
 except Exception as e:
     print('Failed to initialize Undetected Chrome: %s' % str(e))
-    sys.exit(5)    
-
+    sys.exit(5)
 
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentException
@@ -35,7 +35,6 @@ from selenium.webdriver.chrome.options import Options as SeleniumChromeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-
 
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
@@ -58,14 +57,14 @@ def prepare_Chromium(chronium_path):
 
     service_log_path = './chrome_service_log.log' if args.verbose else os.devnull
 
-
     options = SeleniumChromeOptions()
 
     if chronium_path is not None:
         options.binary_location = chronium_path
 
     try:
-        driver = webdriver.Chrome(service_log_path=service_log_path,chrome_options=options)
+        driver = webdriver.Chrome(service_log_path=service_log_path,
+                                  chrome_options=options)
     except Exception as e:
         logger.error("Failed to initialize Chromium: %s", str(e))
         return False
@@ -78,7 +77,8 @@ def prepare_Chromium(chronium_path):
     chromedriver_pid = driver.service.process.pid
     Chromium_pid = psutil.Process(chromedriver_pid).children()[0].pid
 
-    logger.info('chromedriver running as pid %i, chromium running as pid %i', chromedriver_pid, Chromium_pid)
+    logger.info('chromedriver running as pid %i, chromium running as pid %i',
+                chromedriver_pid, Chromium_pid)
 
     try:
         driver.get('http://www.example.com')
@@ -323,7 +323,8 @@ if __name__ == "__main__":
 
     p.add_argument('--cookie-filename', help='Path to the cookie store')
 
-    p.add_argument('--chromium-path', help='Path to the Chromium binary (default autodetect)')
+    p.add_argument('--chromium-path',
+                   help='Path to the Chromium binary (default autodetect)')
 
     p.add_argument('--address',
                    default='127.0.0.1',
