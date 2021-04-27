@@ -11,6 +11,7 @@ import re
 import time
 import sys
 import platform
+import psutil
 import plyer
 import collections
 import hashlib
@@ -19,16 +20,27 @@ import signal
 import random
 import socket
 import base64
+
+import undetected_chromedriver as uc
+try:
+    uc.install()
+except Exception as e:
+    print('Failed to initialize Undetected Chrome: %s' % str(e))
+    sys.exit(5)    
+
+
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentException
+from selenium.webdriver.chrome.options import Options as SeleniumChromeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
 __software__ = "fanfictionnet_ff_proxy"
-__version__ = "0.3"
+__version__ = "0.4"
 __maintainer__ = "Nicolas SAPA"
 __email__ = "nico@byme.at"
 __status__ = "Alpha"
@@ -36,29 +48,37 @@ __status__ = "Alpha"
 stay_in_mainloop = 1
 exit_triggered = 0
 time_last_cookie_dump = time.monotonic()
-firefox_pid = None
+Chromium_pid = None
 
 
-def prepare_firefox():
-    global firefox_pid
-    # Initialize Firefox & load the cookie store
-    logger = logging.getLogger(name="prepare_firefox")
+def prepare_Chromium(chronium_path):
+    global Chromium_pid
+    # Initialize Chromium & load the cookie store
+    logger = logging.getLogger(name="prepare_Chromium")
 
-    service_log_path = './geckodriver.log' if args.verbose else os.devnull
+    service_log_path = './chrome_service_log.log' if args.verbose else os.devnull
+
+
+    options = SeleniumChromeOptions()
+
+    if chronium_path is not None:
+        options.binary_location = chronium_path
 
     try:
-        driver = webdriver.Firefox(service_log_path=service_log_path)
+        driver = webdriver.Chrome(service_log_path=service_log_path,chrome_options=options)
     except Exception as e:
-        logger.error("Failed to initialize Firefox: %s", str(e))
+        logger.error("Failed to initialize Chromium: %s", str(e))
         return False
 
-    logger.info('Firefox %s on %s have started (pid = %i)',
+    logger.info('Chrome %s on %s have started',
                 driver.capabilities['browserVersion'],
-                driver.capabilities['platformName'],
-                driver.capabilities['moz:processID'])
+                driver.capabilities['platformName'])
 
-    # Store Firefox' pid for last ressort cleanup
-    firefox_pid = driver.capabilities['moz:processID']
+    # Store Chromium' pid for last ressort cleanup
+    chromedriver_pid = driver.service.process.pid
+    Chromium_pid = psutil.Process(chromedriver_pid).children()[0].pid
+
+    logger.info('chromedriver running as pid %i, chromium running as pid %i', chromedriver_pid, Chromium_pid)
 
     try:
         driver.get('http://www.example.com')
@@ -141,7 +161,7 @@ def cloudfare_clickcaptcha():
 
     notify_user(
         'Captcha detected by {}'.format(__software__),
-        'Please complete the captcha in Firefox then press Enter in the python console'
+        'Please complete the captcha in Chromium then press Enter in the python console'
     )
     logger.info(colorama.Fore.RED +
                 'Waiting for user to resolve the captcha: press ' +
@@ -303,6 +323,8 @@ if __name__ == "__main__":
 
     p.add_argument('--cookie-filename', help='Path to the cookie store')
 
+    p.add_argument('--chromium-path', help='Path to the Chromium binary (default autodetect)')
+
     p.add_argument('--address',
                    default='127.0.0.1',
                    help='Listen on address (default 127.0.0.1)')
@@ -356,11 +378,15 @@ if __name__ == "__main__":
     if platform.platform().startswith('Darwin'):
         logging.critical('This software was not tested on macOS!')
 
-    driver = prepare_firefox()
+    chromium_path = None
+    if args.chromium_path is not None:
+        chromium_path = args.chromium_path
+
+    driver = prepare_Chromium(chromium_path)
     if driver is False:
-        logging.error('Initializing Firefox failed, exiting')
+        logging.error('Initializing Chromium failed, exiting')
         exit(1)
-    logging.info('Firefox is initialized & ready to works')
+    logging.info('Chromium is initialized & ready to works')
 
     ## Signals handler
     # On Unix, Control + C is SIGINT
@@ -429,10 +455,10 @@ if __name__ == "__main__":
         driver.quit()
     except Exception as e:
         logging.error('Quitting selenium failed: %s', str(e))
-        if type(firefox_pid) == int:
+        if type(Chromium_pid) == int:
             logging.info('Killing pid %i as last ressort cleanup.',
-                         firefox_pid)
-            os.kill(firefox_pid, signal.SIGTERM)
+                         Chromium_pid)
+            os.kill(Chromium_pid, signal.SIGTERM)
 
     logging.info('Exiting...')
     sys.exit(0)

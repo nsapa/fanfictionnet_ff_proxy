@@ -1,25 +1,25 @@
 *** fanfictionnet_ff_proxy: an experimental "proxy" for fanfiction.net ***
-/!\ Very hacky/buggy code - DO NOT USE.
+/!\ Very hacky/buggy code - USE WITH CAUTION
 
-This code (with the included very hacky patch for FanFicFare) permit a manual bypass of the CloudFare captcha for FanFiction.net
-It drive Firefox through Selenium.
+This code permit a manual bypass of the CloudFare captcha for FanFiction.net
+It used to Firefox but now we use Chromium since we can delete navigator.webdriver on this browser.
 
 ** USAGE **
-* Run python3 ./ff_content.py
-* Wait until 'Ready to accept command!' is printed
-* You can now use your patched FanFicFare :)
+* Run python3 ./chrome_content.py
+* Wait until 'Listening on 127.0.0.1:8888' is printed
+* You can now use FanFicFare :)
 
-/!\ If you see "Complete the captcha then press enter", switch to the Firefox window and do the captcha.
+/!\ If you see "Complete the captcha then press enter", switch to the Chromium window and do the captcha.
 ¨¨    Press Enter when you're done, the page will reload and you should see the source code of the URL you request
 
 Do this a first time so cookie.json is initialized
-Control+C quit the browser, do it twice to quit the software
+Control+C should close everything.
 
-The patch is for FanFicFare git rev 03b93bb9d7cd77cd4e92eeee93095a9223ba3c71 (Sun Mar 21 10:13:53 2021 -0500)
+The required code is available in FanFicFare since version 4.1.7.
 
 You will need to edit FanFicFare' personal.ini to enable this proxy:
 [www.fanfiction.net]
-use_fanfictionnet_ff_proxy:true
+use_nsapa_proxy:true
 use_cloudscraper:false
 
 Then you call FanFicFare by being in its directory and doing
