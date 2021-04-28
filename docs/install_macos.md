@@ -11,6 +11,10 @@ This was tested on macOS Catalina.
   brew install python3
   ```
 
+* Quit and relaunch the terminal
+
+* Run ``which python3``, you should ``/usr/local/bin/python3``. If not, [Homebrew](https://brew.sh/) failed to install Python 3. Stop here.
+
 * If [Google Chrome](https://www.google.com/chrome/) is not already installed, install [Ungoogled Chromium](https://github.com/Eloston/ungoogled-chromium)
   ```
   brew install --cask eloston-chromium
@@ -21,12 +25,6 @@ This was tested on macOS Catalina.
   mkdir ~/Dev
   cd ~/Dev
   git clone https://github.com/nsapa/fanfictionnet_ff_proxy
-  ```
-
-* Install the [pyobjus](https://github.com/kivy/pyobjus) dependancy 
-  ```
-  export ARCHFLAGS="-arch x86_64"
-  CC=clang CXX=clang++ pip3 install --user pyobjus
   ```
 
 * Install the required Python dependancy
