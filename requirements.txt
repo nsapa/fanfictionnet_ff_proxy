@@ -2,5 +2,6 @@ selenium
 undetected_chromedriver
 colorama
 plyer
+psutil
 pyobjus; sys_platform == 'darwin'
 pywin32; sys_platform == 'win32'

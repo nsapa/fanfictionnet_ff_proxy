@@ -382,9 +382,6 @@ if __name__ == "__main__":
                  __license__)
     logging.info('Running on %s', platform.platform())
 
-    if platform.platform().startswith('Darwin'):
-        logging.critical('This software was not tested on macOS!')
-
     chrome_path = None
     if args.chrome_path is not None:
         chrome_path = args.chrome_path
