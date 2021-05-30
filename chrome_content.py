@@ -30,7 +30,7 @@ except Exception as e:
     sys.exit(5)
 
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentException
+from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentException, WebDriverException
 from selenium.webdriver.chrome.options import Options as SeleniumChromeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -252,7 +252,15 @@ def mainloop():
     new_url = data_from_client.decode("utf-8").strip('\n')
     url_type = None
 
-    driver.get(new_url)
+    try:
+        driver.get(new_url)
+    except TimeoutException as e:
+        logger.error(
+            'TimeOut while getting %s, resetting renderer with an internal page',
+            new_url)
+        driver.get('chrome://version')
+    finally:
+        driver.get(new_url)
 
     try:
         driver.refresh()
@@ -442,16 +450,29 @@ if __name__ == "__main__":
     while (stay_in_mainloop):
         try:
             mainloop()
+        except WebDriverException as e:
+            logging.error('Unrecoverable error from Selenium: %s', e.msg)
+            serversocket.close()
+            sys.exit(6)
         except Exception as e:
             if exit_triggered:
                 #The way we quit is ... not the python way.
-                logging.debug(
-                    'Exception in the main loop probably because we are quitting (exit_triggered is 1). Message: %s',
-                    str(e))
+                logging.debug('Exception in the main loop during exit (%s)',
+                              str(e))
+                break
             else:
-                logging.error('Exception in the main loop: %s', str(e))
+                logging.error(
+                    'Exception ' + colorama.Style.BRIGHT + '%s' +
+                    colorama.Style.RESET_ALL + ' in the main loop (%s)',
+                    e.__class__.__name__, str(e))
+                # Try to reset the renderer with an internal page
+                driver.get('chrome://version')
+                continue
 
-    serversocket.close()  #Should already have happened
+    try:
+        serversocket.close()  #Should already have happened
+    except Exception as e:
+        logging.error('Failed to close server socket (%s', str(e))
 
     logging.info('Quitting selenium ...')
     try:
