@@ -238,18 +238,41 @@ def mainloop():
         time_last_cookie_dump = time.monotonic()
 
     (clientsocket, s_address) = serversocket.accept()
-    clientsocket.setblocking(True)
+    clientsocket.setblocking(False)
+    clientsocket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
 
-    buffer_length = 1024
-    message_complete = False
-    while not message_complete:
-        data_from_client = clientsocket.recv(buffer_length)
-        if len(data_from_client) < buffer_length:
+    #Code from https://code.activestate.com/recipes/408859/
+    #Licenced under PSF by John Nielsen
+
+    total_data = []
+    data = ''
+    begin = time.time()
+    timeout = 2
+    while True:
+        #if you got some data, then break after wait sec
+        if total_data and time.time() - begin > timeout:
             break
+        #if you got no data at all, wait a little longer
+        elif time.time() - begin > timeout * 2:
+            break
+        try:
+            data = clientsocket.recv(8192)
+            if data:
+                total_data.append(data)
+                begin = time.time()
+            else:
+                time.sleep(0.1)
+        except:
+            pass
+
+    #End of Code from https://code.activestate.com/recipes/408859/
+
+    data_from_client = b''.join(total_data).decode("utf-8")
 
     logger.debug('Received data from client %s:%i: %s', s_address[0],
                  s_address[1], repr(data_from_client))
-    new_url = data_from_client.decode("utf-8").strip('\n')
+
+    new_url = data_from_client.strip('\n')
     url_type = None
 
     try:
@@ -298,18 +321,22 @@ def mainloop():
 
     document_type = 'binary'
     if url_type == 'text/html':
-        document_type = 'text'
-        document_as_bytes = driver.page_source.encode('utf-8')
+        document_type = 'text-b64'
+        document_as_bytes = base64.standard_b64encode(
+            driver.page_source.encode('utf-8'))
     if url_type.startswith('image/'):
         document_type = 'image'
         document_as_bytes = get_image_content_as_bytes(driver,
                                                        driver.current_url)
 
+    clientsocket.setblocking(True)
     clientsocket.send(
         str(len(document_as_bytes)).encode('utf-8') + b'||' +
         document_type.encode('utf-8') + b"$END_OF_HEADER$")  #len
     clientsocket.sendall(document_as_bytes)
     clientsocket.close()
+
+    clientsocket = None
 
     time.sleep(2)
     return
