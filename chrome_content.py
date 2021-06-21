@@ -321,9 +321,14 @@ def mainloop():
 
     document_type = 'binary'
     if url_type == 'text/html':
-        document_type = 'text-b64'
-        document_as_bytes = base64.standard_b64encode(
-            driver.page_source.encode('utf-8'))
+        if encodeb64:
+            document_type = 'text-b64'
+            document_as_bytes = base64.standard_b64encode(
+                driver.page_source.encode('utf-8'))
+        else:
+            document_type = 'text'
+            document_as_bytes = driver.page_source.encode('utf-8')
+
     if url_type.startswith('image/'):
         document_type = 'image'
         document_as_bytes = get_image_content_as_bytes(driver,
@@ -375,6 +380,10 @@ if __name__ == "__main__":
                    default=8888,
                    help='Listen on tcp port (default 8888)')
 
+    p.add_argument('--base64',
+                   action='store_true',
+                   help='Base64-encode the HTML source code')
+
     args = p.parse_args()
 
     # Defaults value
@@ -387,6 +396,10 @@ if __name__ == "__main__":
     cookie_store = './cookie.json'
     if args.cookie_filename is not None:
         cookie_store = args.cookie_filename
+
+    encodeb64 = False
+    if args.base64:
+        encodeb64 = True
 
     # Load colorama (it will patch some function on Windows)
     colorama.init()
@@ -473,6 +486,11 @@ if __name__ == "__main__":
         colorama.Style.RESET_ALL,
         serversocket.getsockname()[0],
         serversocket.getsockname()[1])
+
+    if encodeb64:
+        logging.info('Base64-encoding of HTML source code is ' +
+                     colorama.Style.BRIGHT + 'ENABLED' +
+                     colorama.Style.RESET_ALL)
 
     while (stay_in_mainloop):
         try:
