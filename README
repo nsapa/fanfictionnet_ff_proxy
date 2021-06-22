@@ -9,6 +9,7 @@ It used to Firefox but now we use Chromium since we can delete navigator.webdriv
 * Wait until 'Listening on 127.0.0.1:8888' is printed
 * You can now use FanFicFare :)
 
+ ,
 /!\ If you see "Complete the captcha then press enter", switch to the Chromium window and do the captcha.
 ¨¨    Press Enter when you're done, the page will reload and you should see the source code of the URL you request
 
@@ -16,6 +17,10 @@ Do this a first time so cookie.json is initialized
 Control+C should close everything.
 
 The required code is available in FanFicFare since version 4.1.7.
+
+ ,
+/!\ NOTICE: We have a potential fix for the "truncated reply" error
+¨¨              on this fork: https://github.com/nsapa/FanFicFare/tree/fix_truncated
 
 You will need to edit FanFicFare' personal.ini to enable this proxy:
 [www.fanfiction.net]
