@@ -39,7 +39,7 @@ from selenium.webdriver.support import expected_conditions as EC
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
 __software__ = "fanfictionnet_ff_proxy"
-__version__ = "0.4"
+__version__ = "0.5"
 __maintainer__ = "Nicolas SAPA"
 __email__ = "nico@byme.at"
 __status__ = "Alpha"
@@ -47,85 +47,165 @@ __status__ = "Alpha"
 stay_in_mainloop = 1
 exit_triggered = 0
 time_last_cookie_dump = time.monotonic()
-Chrome_pid = None
 
 
-def prepare_Chrome(chrome_path):
-    global Chrome_pid
-    # Initialize Chrome & load the cookie store
-    logger = logging.getLogger(name="prepare_Chrome")
+class ProxiedBrowser:
+    def __init__(self, chrome_path=None, verbose=False):
+        self.chrome_path = chrome_path
+        self.verbose = verbose
+        self.pid = {}
+        self.driver = None
 
-    service_log_path = './chrome_service_log.log' if args.verbose else os.devnull
+        # Initialize Chrome & load the cookie store
+        logger = logging.getLogger(name="ProxiedBrowser(init)")
 
-    options = SeleniumChromeOptions()
+        service_log_path = './chrome_service_log.log' if self.verbose else os.devnull
 
-    if chrome_path is not None:
-        logger.debug('Forcing binary path to %s', chrome_path)
-        options.binary_location = chrome_path
+        options = SeleniumChromeOptions()
 
-    try:
-        driver = webdriver.Chrome(service_log_path=service_log_path,
-                                  chrome_options=options)
-    except Exception as e:
-        logger.error("Failed to initialize Chrome: %s", str(e))
-        return False
+        if self.chrome_path is not None:
+            logger.debug('Forcing binary path to %s', chrome_path)
+            options.binary_location = self.chrome_path
 
-    logger.info(
-        colorama.Style.BRIGHT + 'Chrome %s on %s' + colorama.Style.RESET_ALL +
-        ' started', driver.capabilities['browserVersion'],
-        driver.capabilities['platformName'])
+        try:
+            self.driver = driver = webdriver.Chrome(
+                service_log_path=service_log_path, chrome_options=options)
+        except Exception as e:
+            logger.error("Failed to initialize Chrome: %s", str(e))
+            raise e
 
-    # Store Chrome' pid for last ressort cleanup
-    chromedriver_pid = driver.service.process.pid
-    Chrome_pid = psutil.Process(chromedriver_pid).children()[0].pid
+        logger.info(
+            colorama.Style.BRIGHT + 'Chrome %s on %s' +
+            colorama.Style.RESET_ALL + ' started',
+            driver.capabilities['browserVersion'],
+            driver.capabilities['platformName'])
 
-    logger.info(
-        'chromedriver version %s running as pid ' + colorama.Style.BRIGHT +
-        '%i' + colorama.Style.RESET_ALL + ', Chrome running as pid ' +
-        colorama.Style.BRIGHT + '%i' + colorama.Style.RESET_ALL,
-        uc.ChromeDriverManager().get_release_version_number().vstring,
-        chromedriver_pid, Chrome_pid)
+        # Store Chrome' pid for last ressort cleanup
+        self.pid['chromedriver'] = driver.service.process.pid
+        self.pid['chrome'] = psutil.Process(
+            self.pid['chromedriver']).children()[0].pid
 
-    try:
-        driver.get('http://www.example.com')
-    except Exception as e:
-        logger.error('Cannot navigate to example.com: %s', str(e))
-        return False
+        logger.info(
+            'chromedriver version %s running as pid ' + colorama.Style.BRIGHT +
+            '%i' + colorama.Style.RESET_ALL + ', Chrome running as pid ' +
+            colorama.Style.BRIGHT + '%i' + colorama.Style.RESET_ALL,
+            uc.ChromeDriverManager().get_release_version_number().vstring,
+            self.pid['chromedriver'], self.pid['chrome'])
 
-    cookies = list()
-    logger.info('Trying to load existing cookie...')
-    try:
-        with open(cookie_store, 'r') as cookie_file:
-            cookies = json.load(codecs.getwriter('utf-8')(cookie_file))
-    except:
-        logger.debug('No cookie to import...')
-    else:
-        for cookie in cookies:
-            prefix = "http://"
-            if cookie['domain'].startswith('.'):
-                prefix = "http://www"
-            if cookie['domain'].startswith('.www.'):  #Yes, it happened...
+        try:
+            driver.get('chrome://version')
+        except Exception as e:
+            logger.error(
+                'Cannot navigate to internal page. Something is REALLY broken; %s',
+                str(e))
+            raise e
+
+        cookies = list()
+        logger.info('Trying to load existing cookie...')
+        try:
+            with open(cookie_store, 'r') as cookie_file:
+                cookies = json.load(codecs.getwriter('utf-8')(cookie_file))
+        except:
+            logger.debug('No cookie to import...')
+        else:
+            for cookie in cookies:
                 prefix = "http://"
-                cookie['domain'] = cookie['domain'].replace('.www.', 'www.')
+                if cookie['domain'].startswith('.'):
+                    prefix = "http://www"
+                if cookie['domain'].startswith('.www.'):  #Yes, it happened...
+                    prefix = "http://"
+                    cookie['domain'] = cookie['domain'].replace(
+                        '.www.', 'www.')
 
-            driver.get('{}{}'.format(prefix, cookie['domain']))
-            driver.add_cookie(cookie)
-        logger.debug('Added %i cookie(s)', len(cookies))
+                driver.get('{}{}'.format(prefix, cookie['domain']))
+                driver.add_cookie(cookie)
+            logger.debug('Added %i cookie(s)', len(cookies))
 
-    return driver
+    def cookie_dump(self):
+        # Export as a json the cookie stored in the browser
+        logger = logging.getLogger(name="ProxiedBrowser(cookie_dump)")
 
+        with open(cookie_store, 'wb') as cookie_file:
+            logger.debug('Dumping cookies to %s', cookie_store)
+            json.dump(self.driver.get_cookies(),
+                      codecs.getwriter('utf-8')(cookie_file),
+                      ensure_ascii=False,
+                      indent=4)
+        return
 
-def cookie_dump():
-    # Export as a json the cookie stored in the browser
-    logger = logging.getLogger(name="cookie_dump")
+    # Some wrappers
+    def get(self, url):
+        return self.driver.get(url)
 
-    with open(cookie_store, 'wb') as cookie_file:
-        logger.debug('Dumping cookies to %s', cookie_store)
-        json.dump(driver.get_cookies(),
-                  codecs.getwriter('utf-8')(cookie_file),
-                  ensure_ascii=False,
-                  indent=4)
-    return
+    def current_url(self):
+        return self.driver.current_url
+
+    def title(self):
+        return self.driver.title
+
+    def page_source(self):
+        return self.driver.page_source
+
+    def execute_async_script(self, code, uri):
+        return self.driver.execute_async_script(code, uri)
+
+    def execute_script(self, code):
+        return self.driver.execute_async_script(code)
+
+    def get_image_content_as_bytes(self, uri):
+        logger = logging.getLogger(
+            name="ProxiedBrowser(get_image_content_as_bytes)")
+        # From https://stackoverflow.com/questions/47424245/how-to-download-an-image-with-python-3-selenium-if-the-url-begins-with-blob/47425305#47425305
+        # This function is licensed under Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
+        # Original author: Florent B. // https://stackoverflow.com/users/2887618/florent-b
+        result = self.driver.execute_async_script(
+            """
+        var uri = arguments[0];
+        var callback = arguments[1];
+        var toBase64 = function(buffer){for(var r,n=new Uint8Array(buffer),t=n.length,a=new Uint8Array(4*Math.ceil(t/3)),i=new Uint8Array(64),o=0,c=0;64>c;++c)i[c]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charCodeAt(c);for(c=0;t-t%3>c;c+=3,o+=4)r=n[c]<<16|n[c+1]<<8|n[c+2],a[o]=i[r>>18],a[o+1]=i[r>>12&63],a[o+2]=i[r>>6&63],a[o+3]=i[63&r];return t%3===1?(r=n[t-1],a[o]=i[r>>2],a[o+1]=i[r<<4&63],a[o+2]=61,a[o+3]=61):t%3===2&&(r=(n[t-2]<<8)+n[t-1],a[o]=i[r>>10],a[o+1]=i[r>>4&63],a[o+2]=i[r<<2&63],a[o+3]=61),new TextDecoder("ascii").decode(a)};
+        var xhr = new XMLHttpRequest();
+        xhr.responseType = 'arraybuffer';
+        xhr.onload = function(){ callback(toBase64(xhr.response)) };
+        xhr.onerror = function(){ callback(xhr.status) };
+        xhr.open('GET', uri);
+        xhr.send();
+        """, uri)
+        if type(result) == int:
+            logger.error("Failed to grab file content with status %s" % result)
+            return False
+        return base64.b64decode(result)
+
+    def get_document_content_type(self):
+        logger = logging.getLogger(
+            name="ProxiedBrowser(get_file_content_as_bytes)")
+        result = self.driver.execute_script('return document.contentType;')
+        if type(result) != str:
+            logger.error('Failed to get document.contentType')
+            return False
+        return result
+
+    def suicide(self):
+        # Kill this instance
+        logger = logging.getLogger(name="ProxiedBrowser(suicide)")
+        driver = self.driver
+        try:
+            driver.close()
+            driver.quit()
+        except Exception as e:
+            logging.error('Quitting selenium failed: %s', str(e))
+            if type(self.pid['chrome']) == int:
+                logger.info(
+                    colorama.Style.BRIGHT + 'Killing Chrome with pid %i' +
+                    colorama.Style.NORMAL + ' as last ressort cleanup.',
+                    self.pid['chrome'])
+                os.kill(self.pid['chrome'], signal.SIGTERM)
+            if type(self.pid['chromedriver']):
+                logger.info(
+                    colorama.Style.BRIGHT +
+                    'Killing chrome driver with pid %i' +
+                    colorama.Style.NORMAL + 'as last ressort cleanup.',
+                    self.pid['chromedriver'])
+                os.kill(self.pid['chromedriver'], signal.SIGTERM)
 
 
 def unix_exit_handler(mysignal, myframe):
@@ -175,53 +255,7 @@ def cloudfare_clickcaptcha():
                 ' to continue' + colorama.Style.RESET_ALL)
     input()
 
-    timeout = 10
-    try:
-        # FIXME: hardcoded element for fanfiction.net
-        element_present = EC.presence_of_element_located((By.ID, 'storytext'))
-        WebDriverWait(driver, timeout).until(element_present)
-    except TimeoutException:
-        logger.error('Failed to load the story text')
-
-    try:
-        driver.switch_to.alert.accept()
-    except:
-        pass
-
-    logger.info('Found the storytext!')
     return True
-
-
-def get_image_content_as_bytes(driver, uri):
-    logger = logging.getLogger(name="get_image_content_as_bytes")
-    # From https://stackoverflow.com/questions/47424245/how-to-download-an-image-with-python-3-selenium-if-the-url-begins-with-blob/47425305#47425305
-    # This function is licensed under Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
-    # Original author: Florent B. // https://stackoverflow.com/users/2887618/florent-b
-    result = driver.execute_async_script(
-        """
-    var uri = arguments[0];
-    var callback = arguments[1];
-    var toBase64 = function(buffer){for(var r,n=new Uint8Array(buffer),t=n.length,a=new Uint8Array(4*Math.ceil(t/3)),i=new Uint8Array(64),o=0,c=0;64>c;++c)i[c]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charCodeAt(c);for(c=0;t-t%3>c;c+=3,o+=4)r=n[c]<<16|n[c+1]<<8|n[c+2],a[o]=i[r>>18],a[o+1]=i[r>>12&63],a[o+2]=i[r>>6&63],a[o+3]=i[63&r];return t%3===1?(r=n[t-1],a[o]=i[r>>2],a[o+1]=i[r<<4&63],a[o+2]=61,a[o+3]=61):t%3===2&&(r=(n[t-2]<<8)+n[t-1],a[o]=i[r>>10],a[o+1]=i[r>>4&63],a[o+2]=i[r<<2&63],a[o+3]=61),new TextDecoder("ascii").decode(a)};
-    var xhr = new XMLHttpRequest();
-    xhr.responseType = 'arraybuffer';
-    xhr.onload = function(){ callback(toBase64(xhr.response)) };
-    xhr.onerror = function(){ callback(xhr.status) };
-    xhr.open('GET', uri);
-    xhr.send();
-    """, uri)
-    if type(result) == int:
-        logger.error("Failed to grab file content with status %s" % result)
-        return False
-    return base64.b64decode(result)
-
-
-def get_document_content_type(driver):
-    logger = logging.getLogger(name="get_file_content_as_bytes")
-    result = driver.execute_script('return document.contentType;')
-    if type(result) != str:
-        logger.error('Failed to get document.contentType')
-        return False
-    return result
 
 
 def notify_user(title, message):
@@ -229,12 +263,12 @@ def notify_user(title, message):
     return
 
 
-def mainloop():
+def mainloop(driver):
     global time_last_cookie_dump
     logger = logging.getLogger(name="mainloop")
 
     if (time.monotonic() - time_last_cookie_dump) > 60:
-        cookie_dump()
+        driver.cookie_dump()
         time_last_cookie_dump = time.monotonic()
 
     (clientsocket, s_address) = serversocket.accept()
@@ -285,54 +319,43 @@ def mainloop():
     finally:
         driver.get(new_url)
 
-    try:
-        driver.refresh()
-    except UnexpectedAlertPresentException:
-        driver.switch_to.alert.accept()
+    url_type = driver.get_document_content_type()
 
-    url_type = get_document_content_type(driver)
+    logger.info(
+        'Current URL = ' + colorama.Style.BRIGHT + '%s' +
+        colorama.Style.NORMAL + ', page title = ' + colorama.Style.BRIGHT +
+        '%s' + colorama.Style.NORMAL + ', mimetype = ' +
+        colorama.Style.BRIGHT + '%s' + colorama.Style.RESET_ALL,
+        driver.current_url(), driver.title(), url_type)
 
-    try:
-        logger.info(
-            'Current URL = ' + colorama.Style.BRIGHT + '%s' +
-            colorama.Style.NORMAL + ', page title = ' + colorama.Style.BRIGHT +
-            '%s' + colorama.Style.NORMAL + ', mimetype = ' +
-            colorama.Style.BRIGHT + '%s' + colorama.Style.RESET_ALL,
-            driver.current_url, driver.title, url_type)
-    except UnexpectedAlertPresentException:
-        driver.switch_to.alert.accept()
-
-    if driver.title.startswith('Attention Required!'):
+    if driver.title().startswith('Attention Required!'):
         if cloudfare_clickcaptcha():
             driver.get(new_url)
-            url_type = get_document_content_type(driver)
-            try:
-                logger.info(
-                    'Current URL = ' + colorama.Style.BRIGHT + '%s' +
-                    colorama.Style.NORMAL + ', page title = ' +
-                    colorama.Style.BRIGHT + '%s' + colorama.Style.NORMAL +
-                    ', mimetype = ' + colorama.Style.BRIGHT + '%s' +
-                    colorama.Style.RESET_ALL, driver.current_url, driver.title,
-                    url_type)
-            except UnexpectedAlertPresentException:
-                driver.switch_to.alert.accept()
-                logging.debug('Accepted an alert')
-            cookie_dump()
+            url_type = driver.get_document_content_type()
+
+            logger.info(
+                'Current URL = ' + colorama.Style.BRIGHT + '%s' +
+                colorama.Style.NORMAL + ', page title = ' +
+                colorama.Style.BRIGHT + '%s' + colorama.Style.NORMAL +
+                ', mimetype = ' + colorama.Style.BRIGHT +
+                '%s' + colorama.Style.RESET_ALL, driver.current_url(),
+                driver.title(), url_type)
+            driver.cookie_dump()
 
     document_type = 'binary'
     if url_type == 'text/html':
         if encodeb64:
             document_type = 'text-b64'
             document_as_bytes = base64.standard_b64encode(
-                driver.page_source.encode('utf-8'))
+                driver.page_source().encode('utf-8'))
         else:
             document_type = 'text'
-            document_as_bytes = driver.page_source.encode('utf-8')
+            document_as_bytes = driver.page_source().encode('utf-8')
 
     if url_type.startswith('image/'):
         document_type = 'image'
-        document_as_bytes = get_image_content_as_bytes(driver,
-                                                       driver.current_url)
+        document_as_bytes = driver.get_image_content_as_bytes(
+            driver.current_url())
 
     clientsocket.setblocking(True)
     clientsocket.send(
@@ -434,7 +457,7 @@ if __name__ == "__main__":
     if args.chrome_path is not None:
         chrome_path = args.chrome_path
 
-    driver = prepare_Chrome(chrome_path)
+    driver = ProxiedBrowser(chrome_path, args.verbose)
     if driver is False:
         logging.error('Initializing Chrome failed, exiting')
         exit(1)
@@ -475,7 +498,7 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error('Cannot create a TCP server: %s', str(e))
         #Try to keep the user computer clean without any lingering geckodriver
-        driver.quit()
+        driver.suicide()
         exit(3)
 
     # Configure the socket backlog
@@ -494,11 +517,26 @@ if __name__ == "__main__":
 
     while (stay_in_mainloop):
         try:
-            mainloop()
+            mainloop(driver)
         except WebDriverException as e:
-            logging.error('Unrecoverable error from Selenium: %s', e.msg)
-            serversocket.close()
-            sys.exit(6)
+            logging.error(
+                colorama.Style.BRIGHT + 'Unrecoverable error' +
+                colorama.Style.NORMAL +
+                ' from Selenium: %s. Killing this instance...', e.msg)
+            driver.suicide()
+            driver = ProxiedBrowser(chrome_path, args.verbose)
+            if driver is False:
+                logging.error('Reinitialisation' + colorama.Style.BRIGHT +
+                              ' failed' + colorama.Style.NORMAL +
+                              '. Exiting :(')
+                serversocket.close()
+                exit(6)
+            else:
+                logging.info('Look like we' + colorama.Style.BRIGHT +
+                             'operational' + colorama.Style.NORMAL +
+                             ' again. Retry your request :)')
+                continue
+
         except Exception as e:
             if exit_triggered:
                 #The way we quit is ... not the python way.
@@ -520,14 +558,8 @@ if __name__ == "__main__":
         logging.error('Failed to close server socket (%s', str(e))
 
     logging.info('Quitting selenium ...')
-    try:
-        driver.close()
-        driver.quit()
-    except Exception as e:
-        logging.error('Quitting selenium failed: %s', str(e))
-        if type(Chrome_pid) == int:
-            logging.info('Killing pid %i as last ressort cleanup.', Chrome_pid)
-            os.kill(Chrome_pid, signal.SIGTERM)
+    driver.suicide()
+    driver = None
 
     logging.info('Exiting...')
     sys.exit(0)
