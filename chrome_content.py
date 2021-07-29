@@ -199,7 +199,7 @@ class ProxiedBrowser:
                     colorama.Style.NORMAL + ' as last ressort cleanup.',
                     self.pid['chrome'])
                 os.kill(self.pid['chrome'], signal.SIGTERM)
-            if type(self.pid['chromedriver']):
+            if type(self.pid['chromedriver']) == int:
                 logger.info(
                     colorama.Style.BRIGHT +
                     'Killing chrome driver with pid %i' +
