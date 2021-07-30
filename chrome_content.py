@@ -203,7 +203,7 @@ class ProxiedBrowser:
                 logger.info(
                     colorama.Style.BRIGHT +
                     'Killing chrome driver with pid %i' +
-                    colorama.Style.NORMAL + 'as last ressort cleanup.',
+                    colorama.Style.NORMAL + ' as last ressort cleanup.',
                     self.pid['chromedriver'])
                 os.kill(self.pid['chromedriver'], signal.SIGTERM)
 
@@ -464,17 +464,6 @@ if __name__ == "__main__":
     logging.info('Chrome is initialized & ready to works')
 
     ## Signals handler
-    # On Unix, Control + C is SIGINT
-    try:
-        signal.signal(signal.SIGINT, unix_exit_handler)
-    except Exception as e:
-        logging.error('Failed to install SIGINT handler: %s', str(e))
-    # Someone closed the terminal
-    try:
-        signal.signal(signal.SIGHUP, unix_exit_handler)
-    except Exception as e:
-        logging.error('Failed to install SIGHUP handler: %s', str(e))
-
     # Windows is different
     if platform.system() == 'Windows':
         import win32api  #not used anywhere else
@@ -483,9 +472,19 @@ if __name__ == "__main__":
             win32api.SetConsoleCtrlHandler(win32_exit_handler, True)
         except Exception as e:
             logging.error('Call to SetConsoleCtrlHandler failed: %s', str(e))
+    else:
+        # On Unix, Control + C is SIGINT
+        try:
+            signal.signal(signal.SIGINT, unix_exit_handler)
+        except Exception as e:
+            logging.error('Failed to install SIGINT handler: %s', str(e))
+        # Someone closed the terminal
+        try:
+            signal.signal(signal.SIGHUP, unix_exit_handler)
+        except Exception as e:
+            logging.error('Failed to install SIGHUP handler: %s', str(e))
 
     ## Time to create the server socket
-
     serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
