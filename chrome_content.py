@@ -22,16 +22,9 @@ import socket
 import base64
 
 # CECILL-2.1 5.3.4 have a compatibility clause with GPL-3.0
-import undetected_chromedriver as uc
-try:
-    uc.install()
-except Exception as e:
-    print('Failed to initialize Undetected Chrome: %s' % str(e))
-    sys.exit(5)
+import undetected_chromedriver.v2 as uc
 
-from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentException, WebDriverException
-from selenium.webdriver.chrome.options import Options as SeleniumChromeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -39,7 +32,7 @@ from selenium.webdriver.support import expected_conditions as EC
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
 __software__ = "fanfictionnet_ff_proxy"
-__version__ = "0.5"
+__version__ = "0.5.1"
 __maintainer__ = "Nicolas SAPA"
 __email__ = "nico@byme.at"
 __status__ = "Alpha"
@@ -50,7 +43,7 @@ time_last_cookie_dump = time.monotonic()
 
 
 class ProxiedBrowser:
-    def __init__(self, chrome_path=None, verbose=False):
+    def __init__(self, chrome_path=None, verbose=False, chrome_version=90):
         self.chrome_path = chrome_path
         self.verbose = verbose
         self.pid = {}
@@ -61,15 +54,16 @@ class ProxiedBrowser:
 
         service_log_path = './chrome_service_log.log' if self.verbose else os.devnull
 
-        options = SeleniumChromeOptions()
+        options = uc.ChromeOptions()
 
         if self.chrome_path is not None:
             logger.debug('Forcing binary path to %s', chrome_path)
             options.binary_location = self.chrome_path
 
         try:
-            self.driver = driver = webdriver.Chrome(
-                service_log_path=service_log_path, chrome_options=options)
+            self.driver = driver = uc.Chrome(service_log_path=service_log_path,
+                                             options=options,
+                                             version_main=chrome_version)
         except Exception as e:
             logger.error("Failed to initialize Chrome: %s", str(e))
             raise e
@@ -78,19 +72,21 @@ class ProxiedBrowser:
             colorama.Style.BRIGHT + 'Chrome %s on %s' +
             colorama.Style.RESET_ALL + ' started',
             driver.capabilities['browserVersion'],
-            driver.capabilities['platformName'])
+            driver.capabilities['platformName'] if
+            driver.capabilities['platformName'] != '' else 'unknow platform')
 
         # Store Chrome' pid for last ressort cleanup
         self.pid['chromedriver'] = driver.service.process.pid
-        self.pid['chrome'] = psutil.Process(
-            self.pid['chromedriver']).children()[0].pid
+        self.pid['chrome'] = driver.browser.pid
 
         logger.info(
             'chromedriver version %s running as pid ' + colorama.Style.BRIGHT +
-            '%i' + colorama.Style.RESET_ALL + ', Chrome running as pid ' +
-            colorama.Style.BRIGHT + '%i' + colorama.Style.RESET_ALL,
-            uc.ChromeDriverManager().get_release_version_number().vstring,
-            self.pid['chromedriver'], self.pid['chrome'])
+            '%i' + colorama.Style.RESET_ALL +
+            ', Chrome version %s running as pid ' + colorama.Style.BRIGHT +
+            '%i' + colorama.Style.RESET_ALL,
+            driver.capabilities['chrome']['chromedriverVersion'],
+            self.pid['chromedriver'], driver.capabilities['browserVersion'],
+            self.pid['chrome'])
 
         try:
             driver.get('chrome://version')
@@ -118,6 +114,9 @@ class ProxiedBrowser:
                         '.www.', 'www.')
 
                 driver.get('{}{}'.format(prefix, cookie['domain']))
+                if 'sameSite' in cookie:
+                    if cookie['sameSite'] == 'None':
+                        cookie['sameSite'] = 'Strict'
                 driver.add_cookie(cookie)
             logger.debug('Added %i cookie(s)', len(cookies))
 
@@ -403,6 +402,11 @@ if __name__ == "__main__":
                    default=8888,
                    help='Listen on tcp port (default 8888)')
 
+    p.add_argument('--chrome-version',
+                   type=int,
+                   default=90,
+                   help='Expected chrome version (default 90)')
+
     p.add_argument('--base64',
                    action='store_true',
                    help='Base64-encode the HTML source code')
@@ -457,7 +461,7 @@ if __name__ == "__main__":
     if args.chrome_path is not None:
         chrome_path = args.chrome_path
 
-    driver = ProxiedBrowser(chrome_path, args.verbose)
+    driver = ProxiedBrowser(chrome_path, args.verbose, args.chrome_version)
     if driver is False:
         logging.error('Initializing Chrome failed, exiting')
         exit(1)
@@ -523,7 +527,8 @@ if __name__ == "__main__":
                 colorama.Style.NORMAL +
                 ' from Selenium: %s. Killing this instance...', e.msg)
             driver.suicide()
-            driver = ProxiedBrowser(chrome_path, args.verbose)
+            driver = ProxiedBrowser(chrome_path, args.verbose,
+                                    args.chrome_version)
             if driver is False:
                 logging.error('Reinitialisation' + colorama.Style.BRIGHT +
                               ' failed' + colorama.Style.NORMAL +
