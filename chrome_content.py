@@ -536,7 +536,7 @@ if __name__ == "__main__":
                 serversocket.close()
                 exit(6)
             else:
-                logging.info('Look like we' + colorama.Style.BRIGHT +
+                logging.info('Look like we are ' + colorama.Style.BRIGHT +
                              'operational' + colorama.Style.NORMAL +
                              ' again. Retry your request :)')
                 continue
