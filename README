@@ -4,10 +4,28 @@
 This code permit a manual bypass of the CloudFare captcha for FanFiction.net
 It used to Firefox but now we use Chromium since we can delete navigator.webdriver on this browser.
 
+** INSTALLATION **
+First, check the docs folder. If the documentation for your platform is missing, try:
+* Update your pip to have working dependancy  resolution: python3 -m pip install --user -U pip
+* Install the requirements: python3 -m pip install --user -U -r requirements.txt
+
+** FanFicFare Configuration **
+You will need to edit FanFicFare' personal.ini to enable this proxy.
+Add this:
+
+[www.fanfiction.net]
+use_nsapa_proxy:true
+use_cloudscraper:false
+
 ** USAGE **
 * Run python3 ./chrome_content.py
 * Wait until 'Listening on 127.0.0.1:8888' is printed
 * You can now use FanFicFare :)
+
+Try, in FanFicFare folder:
+$ PYTHONPATH=.
+$ export PYTHONPATH
+$ python3 ./fanficfare/cli.py -c personnal.ini -d 'https://www.fanfiction.net/s/12266465/1/' 
 
  ,
 /!\ If you see "Complete the captcha then press enter", switch to the Chromium window and do the captcha.
@@ -16,19 +34,14 @@ It used to Firefox but now we use Chromium since we can delete navigator.webdriv
 Do this a first time so cookie.json is initialized
 Control+C should close everything.
 
-The required code is available in FanFicFare since version 4.1.7.
+If you have docker, you can do a 'make run' then open your browser at http://localhost:8080/.
 
- ,
-/!\ NOTICE: We have a potential fix for the "truncated reply" error
-¨¨              on this fork: https://github.com/nsapa/FanFicFare/tree/fix_truncated
 
-You will need to edit FanFicFare' personal.ini to enable this proxy:
-[www.fanfiction.net]
-use_nsapa_proxy:true
-use_cloudscraper:false
+** FanFicFare Version Requirement **
+The required code was first available in FanFicFare in version 4.1.7 but nowaday we require
+version 4.4.0.
 
-Then you call FanFicFare by being in its directory and doing
-$ PYTHONPATH=.
-$ export PYTHONPATH
-$ python3 ./fanficfare/cli.py -c personnal.ini -d 'https://www.fanfiction.net/s/12266465/1/' 
+
+
+
 
