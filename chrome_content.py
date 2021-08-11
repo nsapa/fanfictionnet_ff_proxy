@@ -32,7 +32,7 @@ from selenium.webdriver.support import expected_conditions as EC
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
 __software__ = "fanfictionnet_ff_proxy"
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 __maintainer__ = "Nicolas SAPA"
 __email__ = "nico@byme.at"
 __status__ = "Alpha"
@@ -42,8 +42,39 @@ exit_triggered = 0
 time_last_cookie_dump = time.monotonic()
 
 
+class ChromeVersionFinder:
+    def __init__(self, chrome_path=None):
+        import subprocess
+
+        if chrome_path is not None:
+            self.path = chrome_path
+        else:
+            try:
+                self.path = uc.find_chrome_executable()
+            except Exception as e:
+                # Should not happen
+                error = f'Cannot auto-detect Chrome path: {str(e)}'
+                raise Exception(error)
+            if self.path is None:
+                raise Exception('Cannot auto-detect Chrome path')
+
+        try:
+            ver_str = subprocess.check_output([self.path, '--version'])
+        except Exception as e:
+            error = f'Execution of {self.path} --version failed: {str(e)}'
+            raise Exception(error)
+
+        try:
+            version = int(ver_str.split()[1].decode().split('.')[0])
+        except Exception as e:
+            error = f'Cannot extract version: {str(e)}'
+            raise Exception(error)
+
+        self.version = version
+
+
 class ProxiedBrowser:
-    def __init__(self, chrome_path=None, verbose=False, chrome_version=90):
+    def __init__(self, chrome_path=None, verbose=False, chrome_version=None):
         self.chrome_path = chrome_path
         self.verbose = verbose
         self.pid = {}
@@ -394,18 +425,16 @@ if __name__ == "__main__":
     p.add_argument('--chrome-path',
                    help='Path to the Chrome binary (default autodetect)')
 
+    p.add_argument('--chrome-version', type=int, help='Force Chrome version')
+
     p.add_argument('--address',
                    default='127.0.0.1',
                    help='Listen on address (default 127.0.0.1)')
+
     p.add_argument('--port',
                    type=int,
                    default=8888,
                    help='Listen on tcp port (default 8888)')
-
-    p.add_argument('--chrome-version',
-                   type=int,
-                   default=90,
-                   help='Expected chrome version (default 90)')
 
     p.add_argument('--base64',
                    action='store_true',
@@ -461,7 +490,23 @@ if __name__ == "__main__":
     if args.chrome_path is not None:
         chrome_path = args.chrome_path
 
-    driver = ProxiedBrowser(chrome_path, args.verbose, args.chrome_version)
+    chrome_version = None
+    if args.chrome_version is not None:
+        chrome_version = args.chrome_version
+    else:
+        try:
+            cvf = ChromeVersionFinder(chrome_path)
+        except Exception as e:
+            logging.error(
+                'Failed to detect Chrome version: %s. Use ' +
+                colorama.Style.BRIGHT + '--chrome-path ' +
+                colorama.Style.NORMAL + 'to specify Chrome path.', str(e))
+            exit(2)
+        chrome_version = cvf.version
+        logging.debug('ChromeVersionFinder returned %i for %s', cvf.version,
+                      cvf.path)
+
+    driver = ProxiedBrowser(chrome_path, args.verbose, chrome_version)
     if driver is False:
         logging.error('Initializing Chrome failed, exiting')
         exit(1)
