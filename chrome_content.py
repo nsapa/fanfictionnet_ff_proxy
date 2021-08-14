@@ -58,17 +58,28 @@ class ChromeVersionFinder:
             if self.path is None:
                 raise Exception('Cannot auto-detect Chrome path')
 
-        try:
-            ver_str = subprocess.check_output([self.path, '--version'])
-        except Exception as e:
-            error = f'Execution of {self.path} --version failed: {str(e)}'
-            raise Exception(error)
 
-        try:
-            version = int(ver_str.split()[1].decode().split('.')[0])
-        except Exception as e:
-            error = f'Cannot extract version: {str(e)}'
-            raise Exception(error)
+        if platform.system() == 'Windows':
+                try:
+                    from win32com.client import Dispatch
+                    parser = Dispatch("Scripting.FileSystemObject")
+                    ver_str = parser.GetFileVersion(self.path)
+                    version = int(ver_str.split(".")[0])
+                except Exception as e:
+                    error = f'Cannot extract version: {str(e)}'
+                    raise Exception(error)
+        else:
+            try:
+                ver_str = subprocess.check_output([self.path, '--version'])
+            except Exception as e:
+                error = f'Execution of {self.path} --version failed: {str(e)}'
+                raise Exception(error)
+
+            try:
+                version = int(ver_str.split()[1].decode().split('.')[0])
+            except Exception as e:
+                error = f'Cannot extract version: {str(e)}'
+                raise Exception(error)
 
         self.version = version
 
