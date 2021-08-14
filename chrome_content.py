@@ -207,7 +207,7 @@ class ProxiedBrowser:
 
     def get_document_content_type(self):
         logger = logging.getLogger(
-            name="ProxiedBrowser(get_file_content_as_bytes)")
+            name="ProxiedBrowser(get_document_content_type)")
         result = self.driver.execute_script('return document.contentType;')
         if type(result) != str:
             logger.error('Failed to get document.contentType')
@@ -572,8 +572,8 @@ if __name__ == "__main__":
                 colorama.Style.NORMAL +
                 ' from Selenium: %s. Killing this instance...', e.msg)
             driver.suicide()
-            driver = ProxiedBrowser(chrome_path, args.verbose,
-                                    args.chrome_version)
+            driver = ProxiedBrowser(chrome_path, args.verbose, chrome_version)
+
             if driver is False:
                 logging.error('Reinitialisation' + colorama.Style.BRIGHT +
                               ' failed' + colorama.Style.NORMAL +
