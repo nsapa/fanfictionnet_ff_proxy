@@ -5,3 +5,4 @@ plyer
 psutil
 pyobjus; sys_platform == 'darwin'
 pywin32; sys_platform == 'win32'
+pefile; sys_platform == 'win32'

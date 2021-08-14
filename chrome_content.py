@@ -20,6 +20,7 @@ import signal
 import random
 import socket
 import base64
+import urllib
 
 # CECILL-2.1 5.3.4 have a compatibility clause with GPL-3.0
 import undetected_chromedriver.v2 as uc
@@ -32,7 +33,7 @@ from selenium.webdriver.support import expected_conditions as EC
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
 __software__ = "fanfictionnet_ff_proxy"
-__version__ = "0.5.2"
+__version__ = "0.5.3"
 __maintainer__ = "Nicolas SAPA"
 __email__ = "nico@byme.at"
 __status__ = "Alpha"
@@ -44,7 +45,10 @@ time_last_cookie_dump = time.monotonic()
 
 class ChromeVersionFinder:
     def __init__(self, chrome_path=None):
-        import subprocess
+        if platform.system() == 'Windows':
+            import pefile
+        else:
+            import subprocess
 
         if chrome_path is not None:
             self.path = chrome_path
@@ -58,17 +62,35 @@ class ChromeVersionFinder:
             if self.path is None:
                 raise Exception('Cannot auto-detect Chrome path')
 
-        try:
-            ver_str = subprocess.check_output([self.path, '--version'])
-        except Exception as e:
-            error = f'Execution of {self.path} --version failed: {str(e)}'
-            raise Exception(error)
+        if platform.system() == 'Windows':
+            try:
+                chrome_exe = pefile.PE(self.path)
+            except Exception as e:
+                error = f'Cannot open {self.path} for parsing: {str(e)}'
+                raise Exception(error)
 
-        try:
-            version = int(ver_str.split()[1].decode().split('.')[0])
-        except Exception as e:
-            error = f'Cannot extract version: {str(e)}'
-            raise Exception(error)
+            if not chrome_exe.is_exe():
+                error = f'{self.path} is not a Pe file'
+                raise Exception(error)
+
+            try:
+                version = chrome_exe.VS_FIXEDFILEINFO[0].ProductVersionMS >> 16
+            except Exception as e:
+                error = f'Parsing Pe Version Information failed: {str(e)}'
+                raise Exception(error)
+
+        else:
+            try:
+                ver_str = subprocess.check_output([self.path, '--version'])
+            except Exception as e:
+                error = f'Execution of {self.path} --version failed: {str(e)}'
+                raise Exception(error)
+
+            try:
+                version = int(ver_str.split()[1].decode().split('.')[0])
+            except Exception as e:
+                error = f'Cannot extract version: {str(e)}'
+                raise Exception(error)
 
         self.version = version
 
@@ -79,6 +101,7 @@ class ProxiedBrowser:
         self.verbose = verbose
         self.pid = {}
         self.driver = None
+        self.ready = False
 
         # Initialize Chrome & load the cookie store
         logger = logging.getLogger(name="ProxiedBrowser(init)")
@@ -95,6 +118,11 @@ class ProxiedBrowser:
             self.driver = driver = uc.Chrome(service_log_path=service_log_path,
                                              options=options,
                                              version_main=chrome_version)
+        except urllib.error.HTTPError as e:
+            logger.error('Downloading chromedriver %i failed: %s',
+                         chrome_version, str(e))
+            raise e
+
         except Exception as e:
             logger.error("Failed to initialize Chrome: %s", str(e))
             raise e
@@ -150,6 +178,8 @@ class ProxiedBrowser:
                         cookie['sameSite'] = 'Strict'
                 driver.add_cookie(cookie)
             logger.debug('Added %i cookie(s)', len(cookies))
+
+        self.ready = True
 
     def cookie_dump(self):
         # Export as a json the cookie stored in the browser
@@ -214,28 +244,37 @@ class ProxiedBrowser:
             return False
         return result
 
+    def quit(self):
+        # Try to exit properly
+        logger = logging.getLogger(name="ProxiedBrowser(quit)")
+        driver = self.driver
+
+        driver.close()
+        driver.quit()
+
     def suicide(self):
         # Kill this instance
         logger = logging.getLogger(name="ProxiedBrowser(suicide)")
-        driver = self.driver
-        try:
-            driver.close()
-            driver.quit()
-        except Exception as e:
-            logging.error('Quitting selenium failed: %s', str(e))
-            if type(self.pid['chrome']) == int:
-                logger.info(
-                    colorama.Style.BRIGHT + 'Killing Chrome with pid %i' +
-                    colorama.Style.NORMAL + ' as last ressort cleanup.',
-                    self.pid['chrome'])
+
+        if type(self.pid['chrome']) == int:
+            logger.info(
+                colorama.Style.BRIGHT + 'Killing Chrome with pid %i' +
+                colorama.Style.NORMAL + ' as last ressort cleanup.',
+                self.pid['chrome'])
+            try:
                 os.kill(self.pid['chrome'], signal.SIGTERM)
-            if type(self.pid['chromedriver']) == int:
-                logger.info(
-                    colorama.Style.BRIGHT +
-                    'Killing chrome driver with pid %i' +
-                    colorama.Style.NORMAL + ' as last ressort cleanup.',
-                    self.pid['chromedriver'])
+            except Exception as e:
+                logger.error(f'Failed to kill chrome: {str(e)}')
+
+        if type(self.pid['chromedriver']) == int:
+            logger.info(
+                colorama.Style.BRIGHT + 'Killing chrome driver with pid %i' +
+                colorama.Style.NORMAL + ' as last ressort cleanup.',
+                self.pid['chromedriver'])
+            try:
                 os.kill(self.pid['chromedriver'], signal.SIGTERM)
+            except Exception as e:
+                logger.error(f'Failed to kill chromedriver: {str(e)}')
 
 
 def unix_exit_handler(mysignal, myframe):
@@ -507,7 +546,7 @@ if __name__ == "__main__":
                       cvf.path)
 
     driver = ProxiedBrowser(chrome_path, args.verbose, chrome_version)
-    if driver is False:
+    if driver.ready is False:
         logging.error('Initializing Chrome failed, exiting')
         exit(1)
     logging.info('Chrome is initialized & ready to works')
@@ -574,7 +613,7 @@ if __name__ == "__main__":
             driver.suicide()
             driver = ProxiedBrowser(chrome_path, args.verbose, chrome_version)
 
-            if driver is False:
+            if driver.ready is False:
                 logging.error('Reinitialisation' + colorama.Style.BRIGHT +
                               ' failed' + colorama.Style.NORMAL +
                               '. Exiting :(')
@@ -606,9 +645,12 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error('Failed to close server socket (%s', str(e))
 
-    logging.info('Quitting selenium ...')
-    driver.suicide()
-    driver = None
+    logging.info('Requesting Selenium to close')
+    try:
+        driver.quit()
+    except Exception as e:
+        logging.error('Request failed, killin process...')
+        driver.suicide()
 
     logging.info('Exiting...')
     sys.exit(0)
