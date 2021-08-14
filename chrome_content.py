@@ -252,6 +252,8 @@ class ProxiedBrowser:
         driver.close()
         driver.quit()
 
+        self.ready = False
+
     def suicide(self):
         # Kill this instance
         logger = logging.getLogger(name="ProxiedBrowser(suicide)")
@@ -610,7 +612,15 @@ if __name__ == "__main__":
                 colorama.Style.BRIGHT + 'Unrecoverable error' +
                 colorama.Style.NORMAL +
                 ' from Selenium: %s. Killing this instance...', e.msg)
+            # In this state, Selenium is broken. So kill it
             driver.suicide()
+
+            # Don't restart the browser if we were asked to quit
+            if exit_triggered:
+                driver.ready = False
+                driver.suicide = lambda *a, **b: None
+                break
+
             driver = ProxiedBrowser(chrome_path, args.verbose, chrome_version)
 
             if driver.ready is False:
@@ -649,7 +659,7 @@ if __name__ == "__main__":
     try:
         driver.quit()
     except Exception as e:
-        logging.error('Request failed, killin process...')
+        logging.error('Request failed, killing process...')
         driver.suicide()
 
     logging.info('Exiting...')
