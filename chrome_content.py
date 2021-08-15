@@ -127,22 +127,17 @@ class ProxiedBrowser:
             logger.error("Failed to initialize Chrome: %s", str(e))
             raise e
 
-        logger.info(
-            colorama.Style.BRIGHT + 'Chrome %s on %s' +
-            colorama.Style.RESET_ALL + ' started',
-            driver.capabilities['browserVersion'],
-            driver.capabilities['platformName'] if
-            driver.capabilities['platformName'] != '' else 'unknow platform')
-
         # Store Chrome' pid for last ressort cleanup
         self.pid['chromedriver'] = driver.service.process.pid
         self.pid['chrome'] = driver.browser.pid
 
         logger.info(
-            'chromedriver version %s running as pid ' + colorama.Style.BRIGHT +
-            '%i' + colorama.Style.RESET_ALL +
-            ', Chrome version %s running as pid ' + colorama.Style.BRIGHT +
-            '%i' + colorama.Style.RESET_ALL,
+            'chromedriver version ' + colorama.Style.BRIGHT + '%s' +
+            colorama.Style.RESET_ALL + ' running as pid ' +
+            colorama.Style.BRIGHT + '%i' + colorama.Style.RESET_ALL +
+            ' driving Chrome version ' + colorama.Style.BRIGHT + '%s' +
+            colorama.Style.RESET_ALL + ' running as pid ' +
+            colorama.Style.BRIGHT + '%i' + colorama.Style.RESET_ALL,
             driver.capabilities['chrome']['chromedriverVersion'],
             self.pid['chromedriver'], driver.capabilities['browserVersion'],
             self.pid['chrome'])
@@ -334,6 +329,13 @@ def notify_user(title, message):
     return
 
 
+def set_console_title(message):
+    message = __software__ + ' ' + __version__ + ': ' + message
+
+    print(colorama.ansi.set_title(message), end='')
+    return
+
+
 def mainloop(driver):
     global time_last_cookie_dump
     logger = logging.getLogger(name="mainloop")
@@ -341,6 +343,10 @@ def mainloop(driver):
     if (time.monotonic() - time_last_cookie_dump) > 60:
         driver.cookie_dump()
         time_last_cookie_dump = time.monotonic()
+
+    set_console_title(
+        f'Listening on {serversocket.getsockname()[0]}:{serversocket.getsockname()[1]}'
+    )
 
     (clientsocket, s_address) = serversocket.accept()
     clientsocket.setblocking(False)
@@ -354,6 +360,9 @@ def mainloop(driver):
     begin = time.time()
     timeout = 2
     while True:
+        set_console_title(
+            f'Receiving command from {clientsocket.getpeername()[0]}:{clientsocket.getpeername()[1]}'
+        )
         #if you got some data, then break after wait sec
         if total_data and time.time() - begin > timeout:
             break
@@ -380,6 +389,8 @@ def mainloop(driver):
     new_url = data_from_client.strip('\n')
     url_type = None
 
+    set_console_title(f'Chrome is getting {new_url}')
+
     try:
         driver.get(new_url)
     except TimeoutException as e:
@@ -390,6 +401,7 @@ def mainloop(driver):
     finally:
         driver.get(new_url)
 
+    set_console_title(f'Detecting MIME content type for {new_url}')
     url_type = driver.get_document_content_type()
 
     logger.info(
@@ -400,6 +412,7 @@ def mainloop(driver):
         driver.current_url(), driver.title(), url_type)
 
     if driver.title().startswith('Attention Required!'):
+        set_console_title('Captcha detected - waiting for user input')
         if cloudfare_clickcaptcha():
             driver.get(new_url)
             url_type = driver.get_document_content_type()
@@ -415,6 +428,7 @@ def mainloop(driver):
 
     document_type = 'binary'
     if url_type == 'text/html':
+        set_console_title(f'Downloading HTML content from {new_url}')
         if encodeb64:
             document_type = 'text-b64'
             document_as_bytes = base64.standard_b64encode(
@@ -424,19 +438,24 @@ def mainloop(driver):
             document_as_bytes = driver.page_source().encode('utf-8')
 
     if url_type.startswith('image/'):
+        set_console_title(f'Downloading image from {new_url}')
         document_type = 'image'
         document_as_bytes = driver.get_image_content_as_bytes(
             driver.current_url())
 
     clientsocket.setblocking(True)
+    set_console_title('Sending header')
     clientsocket.send(
         str(len(document_as_bytes)).encode('utf-8') + b'||' +
         document_type.encode('utf-8') + b"$END_OF_HEADER$")  #len
+    set_console_title(
+        f'Sending {len(document_as_bytes)} bytes of {document_type}')
     clientsocket.sendall(document_as_bytes)
     clientsocket.close()
 
     clientsocket = None
 
+    set_console_title('Client disconnected - sleeping for 2 second')
     time.sleep(2)
     return
 
@@ -449,6 +468,9 @@ class CustomFormatter(logging.Formatter):
 
 
 if __name__ == "__main__":
+    if platform.system() == 'Windows':
+        import win32api
+
     p = argparse.ArgumentParser()
 
     p.add_argument('--verbose',
@@ -535,6 +557,7 @@ if __name__ == "__main__":
     if args.chrome_version is not None:
         chrome_version = args.chrome_version
     else:
+        set_console_title('Detecting Chrome version')
         try:
             cvf = ChromeVersionFinder(chrome_path)
         except Exception as e:
@@ -547,6 +570,7 @@ if __name__ == "__main__":
         logging.debug('ChromeVersionFinder returned %i for %s', cvf.version,
                       cvf.path)
 
+    set_console_title('Initializing Chrome')
     driver = ProxiedBrowser(chrome_path, args.verbose, chrome_version)
     if driver.ready is False:
         logging.error('Initializing Chrome failed, exiting')
@@ -554,10 +578,10 @@ if __name__ == "__main__":
     logging.info('Chrome is initialized & ready to works')
 
     ## Signals handler
+    set_console_title('Configuring signal handler')
+
     # Windows is different
     if platform.system() == 'Windows':
-        import win32api  #not used anywhere else
-
         try:
             win32api.SetConsoleCtrlHandler(win32_exit_handler, True)
         except Exception as e:
@@ -573,6 +597,8 @@ if __name__ == "__main__":
             signal.signal(signal.SIGHUP, unix_exit_handler)
         except Exception as e:
             logging.error('Failed to install SIGHUP handler: %s', str(e))
+
+    set_console_title('Creating server socket')
 
     ## Time to create the server socket
     serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -604,6 +630,7 @@ if __name__ == "__main__":
                      colorama.Style.BRIGHT + 'ENABLED' +
                      colorama.Style.RESET_ALL)
 
+    set_console_title('Entering main loop')
     while (stay_in_mainloop):
         try:
             mainloop(driver)
@@ -612,6 +639,8 @@ if __name__ == "__main__":
                 colorama.Style.BRIGHT + 'Unrecoverable error' +
                 colorama.Style.NORMAL +
                 ' from Selenium: %s. Killing this instance...', e.msg)
+            set_console_title(
+                'Recovering from Selenium error - killing old browser')
             # In this state, Selenium is broken. So kill it
             driver.suicide()
 
@@ -621,6 +650,8 @@ if __name__ == "__main__":
                 driver.suicide = lambda *a, **b: None
                 break
 
+            set_console_title(
+                'Recovering from Selenium error - initializing browser')
             driver = ProxiedBrowser(chrome_path, args.verbose, chrome_version)
 
             if driver.ready is False:
@@ -630,6 +661,7 @@ if __name__ == "__main__":
                 serversocket.close()
                 exit(6)
             else:
+                set_console_title('Recovered!')
                 logging.info('Look like we are ' + colorama.Style.BRIGHT +
                              'operational' + colorama.Style.NORMAL +
                              ' again. Retry your request :)')
@@ -650,16 +682,20 @@ if __name__ == "__main__":
                 driver.get('chrome://version')
                 continue
 
+    set_console_title('Closing server socket')
+
     try:
         serversocket.close()  #Should already have happened
     except Exception as e:
         logging.error('Failed to close server socket (%s', str(e))
 
-    logging.info('Requesting Selenium to close')
+    set_console_title('Closing browser')
+    logging.info('Requesting Selenium to quit')
     try:
         driver.quit()
     except Exception as e:
         logging.error('Request failed, killing process...')
+        set_console_title('Cleaning up')
         driver.suicide()
 
     logging.info('Exiting...')
