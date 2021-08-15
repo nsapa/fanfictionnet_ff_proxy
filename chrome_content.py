@@ -332,7 +332,7 @@ def notify_user(title, message):
 def set_console_title(message):
     message = __software__ + ' ' + __version__ + ': ' + message
 
-    print(colorama.ansi.set_title(message), end='')
+    print(colorama.ansi.set_title(message), end='\r')
     return
 
 
