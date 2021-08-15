@@ -33,7 +33,7 @@ from selenium.webdriver.support import expected_conditions as EC
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
 __software__ = "fanfictionnet_ff_proxy"
-__version__ = "0.5.3"
+__version__ = "0.5.4"
 __maintainer__ = "Nicolas SAPA"
 __email__ = "nico@byme.at"
 __status__ = "Alpha"
@@ -565,7 +565,7 @@ if __name__ == "__main__":
                 'Failed to detect Chrome version: %s. Use ' +
                 colorama.Style.BRIGHT + '--chrome-path ' +
                 colorama.Style.NORMAL + 'to specify Chrome path.', str(e))
-            exit(2)
+            sys.exit(2)
         chrome_version = cvf.version
         logging.debug('ChromeVersionFinder returned %i for %s', cvf.version,
                       cvf.path)
@@ -574,7 +574,7 @@ if __name__ == "__main__":
     driver = ProxiedBrowser(chrome_path, args.verbose, chrome_version)
     if driver.ready is False:
         logging.error('Initializing Chrome failed, exiting')
-        exit(1)
+        sys.exit(1)
     logging.info('Chrome is initialized & ready to works')
 
     ## Signals handler
@@ -614,7 +614,7 @@ if __name__ == "__main__":
         logging.error('Cannot create a TCP server: %s', str(e))
         #Try to keep the user computer clean without any lingering geckodriver
         driver.suicide()
-        exit(3)
+        sys.exit(3)
 
     # Configure the socket backlog
     serversocket.listen(5)
@@ -659,7 +659,7 @@ if __name__ == "__main__":
                               ' failed' + colorama.Style.NORMAL +
                               '. Exiting :(')
                 serversocket.close()
-                exit(6)
+                sys.exit(6)
             else:
                 set_console_title('Recovered!')
                 logging.info('Look like we are ' + colorama.Style.BRIGHT +
