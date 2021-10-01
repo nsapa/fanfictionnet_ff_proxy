@@ -145,7 +145,7 @@ class ProxiedBrowser:
         try:
             driver.get('chrome://version')
         except Exception as e:
-            logger.error(
+            logger.critical(
                 'Cannot navigate to internal page. Something is REALLY broken; %s',
                 str(e))
             raise e
@@ -561,7 +561,7 @@ if __name__ == "__main__":
         try:
             cvf = ChromeVersionFinder(chrome_path)
         except Exception as e:
-            logging.error(
+            logging.critical(
                 'Failed to detect Chrome version: %s. Use ' +
                 colorama.Style.BRIGHT + '--chrome-path ' +
                 colorama.Style.NORMAL + 'to specify Chrome path.', str(e))
@@ -573,7 +573,7 @@ if __name__ == "__main__":
     set_console_title('Initializing Chrome')
     driver = ProxiedBrowser(chrome_path, args.verbose, chrome_version)
     if driver.ready is False:
-        logging.error('Initializing Chrome failed, exiting')
+        logging.critical('Initializing Chrome failed, exiting')
         sys.exit(1)
     logging.info('Chrome is initialized & ready to works')
 
@@ -585,18 +585,18 @@ if __name__ == "__main__":
         try:
             win32api.SetConsoleCtrlHandler(win32_exit_handler, True)
         except Exception as e:
-            logging.error('Call to SetConsoleCtrlHandler failed: %s', str(e))
+            logging.warning('Call to SetConsoleCtrlHandler failed: %s', str(e))
     else:
         # On Unix, Control + C is SIGINT
         try:
             signal.signal(signal.SIGINT, unix_exit_handler)
         except Exception as e:
-            logging.error('Failed to install SIGINT handler: %s', str(e))
+            logging.warning('Failed to install SIGINT handler: %s', str(e))
         # Someone closed the terminal
         try:
             signal.signal(signal.SIGHUP, unix_exit_handler)
         except Exception as e:
-            logging.error('Failed to install SIGHUP handler: %s', str(e))
+            logging.warning('Failed to install SIGHUP handler: %s', str(e))
 
     set_console_title('Creating server socket')
 
@@ -605,13 +605,13 @@ if __name__ == "__main__":
     try:
         serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     except Exception as e:
-        logging.error('Failed to set SO_REUSEADDR on the server socket: %s',
-                      str(e))
+        logging.warning('Failed to set SO_REUSEADDR on the server socket: %s',
+                        str(e))
 
     try:
         serversocket.bind((args.address, args.port))
     except Exception as e:
-        logging.error('Cannot create a TCP server: %s', str(e))
+        logging.critical('Cannot create a TCP server: %s', str(e))
         #Try to keep the user computer clean without any lingering geckodriver
         driver.suicide()
         sys.exit(3)
@@ -635,7 +635,7 @@ if __name__ == "__main__":
         try:
             mainloop(driver)
         except WebDriverException as e:
-            logging.error(
+            logging.critical(
                 colorama.Style.BRIGHT + 'Unrecoverable error' +
                 colorama.Style.NORMAL +
                 ' from Selenium: %s. Killing this instance...', e.msg)
@@ -674,7 +674,7 @@ if __name__ == "__main__":
                               str(e))
                 break
             else:
-                logging.error(
+                logging.warning(
                     'Exception ' + colorama.Style.BRIGHT + '%s' +
                     colorama.Style.RESET_ALL + ' in the main loop (%s)',
                     e.__class__.__name__, str(e))
@@ -694,7 +694,7 @@ if __name__ == "__main__":
     try:
         driver.quit()
     except Exception as e:
-        logging.error('Request failed, killing process...')
+        logging.warning('Request failed, killing process...')
         set_console_title('Cleaning up')
         driver.suicide()
 
