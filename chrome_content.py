@@ -21,6 +21,7 @@ import random
 import socket
 import base64
 import urllib
+import urllib3
 
 # CECILL-2.1 5.3.4 have a compatibility clause with GPL-3.0
 import undetected_chromedriver.v2 as uc
@@ -102,6 +103,7 @@ class ProxiedBrowser:
         self.pid = {}
         self.driver = None
         self.ready = False
+        self.wanted_url = None
 
         # Initialize Chrome & load the cookie store
         logger = logging.getLogger(name="ProxiedBrowser(init)")
@@ -190,6 +192,7 @@ class ProxiedBrowser:
 
     # Some wrappers
     def get(self, url):
+        self.wanted_url = url
         return self.driver.get(url)
 
     def current_url(self):
@@ -213,6 +216,7 @@ class ProxiedBrowser:
         # From https://stackoverflow.com/questions/47424245/how-to-download-an-image-with-python-3-selenium-if-the-url-begins-with-blob/47425305#47425305
         # This function is licensed under Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
         # Original author: Florent B. // https://stackoverflow.com/users/2887618/florent-b
+        self.wanted_url = uri
         result = self.driver.execute_async_script(
             """
         var uri = arguments[0];
@@ -336,8 +340,106 @@ def set_console_title(message):
     return
 
 
-def mainloop(driver):
+def get_content(driver, url, encodeb64):
+    logger = logging.getLogger(name="get_content")
+    set_console_title(f'Chrome is getting {url}')
+
+    try:
+        driver.get(url)
+    except TimeoutException as e:
+        logger.error(
+            'TimeOut while getting %s, resetting renderer with an internal page',
+            new_url)
+        driver.get('chrome://version')
+    finally:
+        driver.get(url)
+
+    set_console_title(f'Detecting MIME content type for {url}')
+    url_type = driver.get_document_content_type()
+
+    logger.info(
+        'Current URL = ' + colorama.Style.BRIGHT + '%s' +
+        colorama.Style.NORMAL + ', page title = ' + colorama.Style.BRIGHT +
+        '%s' + colorama.Style.NORMAL + ', mimetype = ' +
+        colorama.Style.BRIGHT + '%s' + colorama.Style.RESET_ALL,
+        driver.current_url(), driver.title(), url_type)
+
+    if driver.title().startswith('Attention Required!'):
+        set_console_title('Captcha detected - waiting for user input')
+        if cloudfare_clickcaptcha():
+            driver.get(url)
+            url_type = driver.get_document_content_type()
+
+            logger.info(
+                'Current URL = ' + colorama.Style.BRIGHT + '%s' +
+                colorama.Style.NORMAL + ', page title = ' +
+                colorama.Style.BRIGHT + '%s' + colorama.Style.NORMAL +
+                ', mimetype = ' + colorama.Style.BRIGHT +
+                '%s' + colorama.Style.RESET_ALL, driver.current_url(),
+                driver.title(), url_type)
+            driver.cookie_dump()
+
+    document_type = 'binary'
+    if url_type == 'text/html':
+        set_console_title(f'Downloading HTML content from {url}')
+        if encodeb64:
+            document_type = 'text-b64'
+            document_as_bytes = base64.standard_b64encode(
+                driver.page_source().encode('utf-8'))
+        else:
+            document_type = 'text'
+            document_as_bytes = driver.page_source().encode('utf-8')
+
+    if url_type.startswith('image/'):
+        set_console_title(f'Downloading image from {new_url}')
+        document_type = 'image'
+        document_as_bytes = driver.get_image_content_as_bytes(
+            driver.current_url())
+
+    return (document_as_bytes, document_type)
+
+
+def selenium_recovery(serversocket):
+    global driver
+    logger = logging.getLogger(name="selenium_recovery")
+
+    set_console_title('Recovering from Selenium error - killing old browser')
+    # Log the URL we failed to get
+    logger.error(
+        f"Selenium error while getting {colorama.Style.BRIGHT}{driver.wanted_url}{colorama.Style.NORMAL}, recovery started."
+    )
+    # driver.wanted_url will be empty after the suicide
+    temp_url = driver.wanted_url
+
+    # In this state, Selenium is broken. So kill it
+    driver.suicide()
+
+    # Don't restart the browser if we were asked to quit
+    if exit_triggered:
+        driver.ready = False
+        driver.suicide = lambda *a, **b: None
+        return
+
+    set_console_title('Recovering from Selenium error - initializing browser')
+    driver = ProxiedBrowser(chrome_path, args.verbose, chrome_version)
+
+    if driver.ready is False:
+        logger.error('Reinitialisation' + colorama.Style.BRIGHT + ' failed' +
+                     colorama.Style.NORMAL + '. Exiting :(')
+        serversocket.close()
+        sys.exit(6)
+    else:
+        set_console_title('Recovered!')
+        logger.info('Look like we are ' + colorama.Style.BRIGHT +
+                    'operational' + colorama.Style.NORMAL +
+                    ' again. Retrying ' + temp_url)
+    return
+
+
+def mainloop(encodeb64):
     global time_last_cookie_dump
+    global exit_triggered
+    global driver
     logger = logging.getLogger(name="mainloop")
 
     if (time.monotonic() - time_last_cookie_dump) > 60:
@@ -387,61 +489,44 @@ def mainloop(driver):
                  s_address[1], repr(data_from_client))
 
     new_url = data_from_client.strip('\n')
-    url_type = None
 
-    set_console_title(f'Chrome is getting {new_url}')
+    tries_count = 0
 
-    try:
-        driver.get(new_url)
-    except TimeoutException as e:
-        logger.error(
-            'TimeOut while getting %s, resetting renderer with an internal page',
-            new_url)
-        driver.get('chrome://version')
-    finally:
-        driver.get(new_url)
+    if (new_url is None) or (new_url == ''):
+        logger.error("Client sent us an empty url. Ignoring.")
+        new_url = "empty"
+        tries_count = 99
 
-    set_console_title(f'Detecting MIME content type for {new_url}')
-    url_type = driver.get_document_content_type()
+    while (tries_count < 5):
+        tries_count += 1
+        try:
+            (document_as_bytes,
+             document_type) = get_content(driver, new_url, encodeb64)
+            tries_count = 0
+            break
 
-    logger.info(
-        'Current URL = ' + colorama.Style.BRIGHT + '%s' +
-        colorama.Style.NORMAL + ', page title = ' + colorama.Style.BRIGHT +
-        '%s' + colorama.Style.NORMAL + ', mimetype = ' +
-        colorama.Style.BRIGHT + '%s' + colorama.Style.RESET_ALL,
-        driver.current_url(), driver.title(), url_type)
+        except WebDriverException as e:
+            logger.critical(
+                colorama.Style.BRIGHT + 'Unrecoverable error' +
+                colorama.Style.NORMAL +
+                ' from Selenium: %s. Killing this instance...', e.msg)
 
-    if driver.title().startswith('Attention Required!'):
-        set_console_title('Captcha detected - waiting for user input')
-        if cloudfare_clickcaptcha():
-            driver.get(new_url)
-            url_type = driver.get_document_content_type()
+            selenium_recovery(serversocket)
 
-            logger.info(
-                'Current URL = ' + colorama.Style.BRIGHT + '%s' +
-                colorama.Style.NORMAL + ', page title = ' +
-                colorama.Style.BRIGHT + '%s' + colorama.Style.NORMAL +
-                ', mimetype = ' + colorama.Style.BRIGHT +
-                '%s' + colorama.Style.RESET_ALL, driver.current_url(),
-                driver.title(), url_type)
-            driver.cookie_dump()
+        except urllib3.exceptions.MaxRetryError as e:
+            logger.critical(
+                colorama.Style.BRIGHT + 'Unrecoverable error' +
+                colorama.Style.NORMAL +
+                ' from Selenium\' subsystem. Killing this instance...')
+            selenium_recovery(serversocket)
 
-    document_type = 'binary'
-    if url_type == 'text/html':
-        set_console_title(f'Downloading HTML content from {new_url}')
-        if encodeb64:
-            document_type = 'text-b64'
-            document_as_bytes = base64.standard_b64encode(
-                driver.page_source().encode('utf-8'))
-        else:
-            document_type = 'text'
-            document_as_bytes = driver.page_source().encode('utf-8')
-
-    if url_type.startswith('image/'):
-        set_console_title(f'Downloading image from {new_url}')
-        document_type = 'image'
-        document_as_bytes = driver.get_image_content_as_bytes(
-            driver.current_url())
+    if tries_count != 0:
+        # We failed after 5 retry
+        document_as_bytes = b""
+        document_type = "error"
+        if new_url != "empty":
+            # Don't log when URL is empty as we already did that
+            logger.error(f"Failed to get {new_url} after multiple retries")
 
     clientsocket.setblocking(True)
     set_console_title('Sending header')
@@ -633,39 +718,7 @@ if __name__ == "__main__":
     set_console_title('Entering main loop')
     while (stay_in_mainloop):
         try:
-            mainloop(driver)
-        except WebDriverException as e:
-            logging.critical(
-                colorama.Style.BRIGHT + 'Unrecoverable error' +
-                colorama.Style.NORMAL +
-                ' from Selenium: %s. Killing this instance...', e.msg)
-            set_console_title(
-                'Recovering from Selenium error - killing old browser')
-            # In this state, Selenium is broken. So kill it
-            driver.suicide()
-
-            # Don't restart the browser if we were asked to quit
-            if exit_triggered:
-                driver.ready = False
-                driver.suicide = lambda *a, **b: None
-                break
-
-            set_console_title(
-                'Recovering from Selenium error - initializing browser')
-            driver = ProxiedBrowser(chrome_path, args.verbose, chrome_version)
-
-            if driver.ready is False:
-                logging.error('Reinitialisation' + colorama.Style.BRIGHT +
-                              ' failed' + colorama.Style.NORMAL +
-                              '. Exiting :(')
-                serversocket.close()
-                sys.exit(6)
-            else:
-                set_console_title('Recovered!')
-                logging.info('Look like we are ' + colorama.Style.BRIGHT +
-                             'operational' + colorama.Style.NORMAL +
-                             ' again. Retry your request :)')
-                continue
+            mainloop(encodeb64)
 
         except Exception as e:
             if exit_triggered:
