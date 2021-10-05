@@ -349,7 +349,7 @@ def get_content(driver, url, encodeb64):
     except TimeoutException as e:
         logger.error(
             'TimeOut while getting %s, resetting renderer with an internal page',
-            new_url)
+            url)
         driver.get('chrome://version')
     finally:
         driver.get(url)
@@ -391,7 +391,7 @@ def get_content(driver, url, encodeb64):
             document_as_bytes = driver.page_source().encode('utf-8')
 
     if url_type.startswith('image/'):
-        set_console_title(f'Downloading image from {new_url}')
+        set_console_title(f'Downloading image from {url}')
         document_type = 'image'
         document_as_bytes = driver.get_image_content_as_bytes(
             driver.current_url())
