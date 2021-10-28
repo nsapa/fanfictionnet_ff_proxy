@@ -44,6 +44,14 @@ exit_triggered = 0
 time_last_cookie_dump = time.monotonic()
 
 
+class FailedToDownload(Exception):
+    def __init__(self, error):
+        self.error = error
+
+    def __str__(self):
+        return self.error
+
+
 class ChromeVersionFinder:
     def __init__(self, chrome_path=None):
         if platform.system() == 'Windows':
@@ -111,6 +119,8 @@ class ProxiedBrowser:
         service_log_path = './chrome_service_log.log' if self.verbose else os.devnull
 
         options = uc.ChromeOptions()
+        options.add_argument(
+            '--no-first-run --no-service-autorun --password-store=basic')
 
         if self.chrome_path is not None:
             logger.debug('Forcing binary path to %s', chrome_path)
@@ -311,7 +321,7 @@ def win32_exit_handler(mysignal):
     return True
 
 
-def cloudfare_clickcaptcha():
+def cloudfare_clickcaptcha(driver):
     # Try to validate hCaptcha
     logger = logging.getLogger(name="cloudfare_clickcaptcha")
 
@@ -325,7 +335,10 @@ def cloudfare_clickcaptcha():
                 ' to continue' + colorama.Style.RESET_ALL)
     input()
 
-    return True
+    if driver.page_source().find("cf-browser-verification") != -1:
+        return False
+    else:
+        return True
 
 
 def notify_user(title, message):
@@ -364,9 +377,9 @@ def get_content(driver, url, encodeb64):
         colorama.Style.BRIGHT + '%s' + colorama.Style.RESET_ALL,
         driver.current_url(), driver.title(), url_type)
 
-    if driver.title().startswith('Attention Required!'):
-        set_console_title('Captcha detected - waiting for user input')
-        if cloudfare_clickcaptcha():
+    if driver.page_source().find("cf-browser-verification") != -1:
+        set_console_title('Cloudfare challenge detected!')
+        if cloudfare_clickcaptcha(driver):
             driver.get(url)
             url_type = driver.get_document_content_type()
 
@@ -378,6 +391,8 @@ def get_content(driver, url, encodeb64):
                 '%s' + colorama.Style.RESET_ALL, driver.current_url(),
                 driver.title(), url_type)
             driver.cookie_dump()
+        else:
+            raise FailedToDownload("Cloudfare challenge failed!")
 
     document_type = 'binary'
     if url_type == 'text/html':
