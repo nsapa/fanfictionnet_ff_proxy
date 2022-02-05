@@ -24,7 +24,7 @@ import urllib
 import urllib3
 
 # CECILL-2.1 5.3.4 have a compatibility clause with GPL-3.0
-import undetected_chromedriver.v2 as uc
+import undetected_chromedriver as uc
 
 from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentException, WebDriverException
 from selenium.webdriver.common.by import By
@@ -141,7 +141,7 @@ class ProxiedBrowser:
 
         # Store Chrome' pid for last ressort cleanup
         self.pid['chromedriver'] = driver.service.process.pid
-        self.pid['chrome'] = driver.browser.pid
+        self.pid['chrome'] = driver.browser_pid
 
         logger.info(
             'chromedriver version ' + colorama.Style.BRIGHT + '%s' +
