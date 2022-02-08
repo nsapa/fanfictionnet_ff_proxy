@@ -4,20 +4,14 @@
 import argparse
 import codecs
 import colorama
-import datetime
 import logging
 import os
-import re
 import time
 import sys
 import platform
-import psutil
 import plyer
-import collections
-import hashlib
 import json
 import signal
-import random
 import socket
 import base64
 import urllib
@@ -26,15 +20,12 @@ import urllib3
 # CECILL-2.1 5.3.4 have a compatibility clause with GPL-3.0
 import undetected_chromedriver as uc
 
-from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentException, WebDriverException
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
 __software__ = "fanfictionnet_ff_proxy"
-__version__ = "0.5.4"
+__version__ = "0.5.5"
 __maintainer__ = "Nicolas SAPA"
 __email__ = "nico@byme.at"
 __status__ = "Alpha"
@@ -45,6 +36,7 @@ time_last_cookie_dump = time.monotonic()
 
 
 class FailedToDownload(Exception):
+
     def __init__(self, error):
         self.error = error
 
@@ -53,6 +45,12 @@ class FailedToDownload(Exception):
 
 
 class ChromeVersionFinder:
+    '''
+    This class try to find the version of Chrome.
+    On Unix, we parse the output of chrome --version.
+    On Windows, we parse the PE file.
+    '''
+
     def __init__(self, chrome_path=None):
         if platform.system() == 'Windows':
             import pefile
@@ -105,6 +103,7 @@ class ChromeVersionFinder:
 
 
 class ProxiedBrowser:
+
     def __init__(self, chrome_path=None, verbose=False, chrome_version=None):
         self.chrome_path = chrome_path
         self.verbose = verbose
@@ -315,7 +314,10 @@ def unix_exit_handler(mysignal, myframe):
 
 
 def win32_exit_handler(mysignal):
-    #Fake a SIGINT
+    '''
+    This is the signal handler for Windows.
+    We just fake an SIGINT signal to the Unix signal handler
+    '''
     unix_exit_handler(signal.SIGINT, None)
 
     return True
@@ -415,6 +417,12 @@ def get_content(driver, url, encodeb64):
 
 
 def selenium_recovery(serversocket):
+    '''
+    This class try to recover after a Selenium exception.
+    We kill the current browser and try to start another instance.
+
+    If it work, we overwrite the driver object to point to the new instance.
+    '''
     global driver
     logger = logging.getLogger(name="selenium_recovery")
 
@@ -561,6 +569,7 @@ def mainloop(encodeb64):
 
 
 class CustomFormatter(logging.Formatter):
+
     def formatTime(self, record, datefmt=None):
         if '%f' in datefmt:
             datefmt = datefmt.replace('%f', '%03d' % record.msecs)
