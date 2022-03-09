@@ -3,3 +3,4 @@ chrome_service_log.log
 selenium-firefox-proxy.log
 cookie.json
 chromedriver
+.vscode
