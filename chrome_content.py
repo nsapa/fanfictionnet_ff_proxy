@@ -21,27 +21,102 @@ import urllib3
 import undetected_chromedriver as uc
 
 from selenium.common.exceptions import TimeoutException, WebDriverException
+from dataclasses import dataclass
 
 __author__ = "Nicolas SAPA"
 __license__ = "CECILL-2.1"
 __software__ = "fanfictionnet_ff_proxy"
-__version__ = "0.5.5"
+__version__ = "0.5.6"
 __maintainer__ = "Nicolas SAPA"
 __email__ = "nico@byme.at"
 __status__ = "Alpha"
 
 stay_in_mainloop = 1
 exit_triggered = 0
-time_last_cookie_dump = time.monotonic()
 
 
 class FailedToDownload(Exception):
-
     def __init__(self, error):
         self.error = error
 
     def __str__(self):
         return self.error
+
+
+@dataclass(eq=False)
+class ff_Stats:
+    ''' Stats of fanfictionnet_ff_proxy '''
+    ''' Software started at this date '''
+    started: float = time.monotonic()
+    ''' Exit requested at this date, will be set after the mainloop exit '''
+    ended: float = -1
+    ''' Number of request received '''
+    requests_received: int = 0
+    ''' Number of request failed '''
+    requests_failed: int = 0
+    ''' Number of bytes sent to client '''
+    size_transfered: int = 0
+    ''' Number of time we restarted (suicide was called) '''
+    restart: int = 0
+    ''' Number of html page'''
+    content_text: int = 0
+    ''' Number of images '''
+    content_image: int = 0
+    ''' Number of time someone connected to us '''
+    clients: int = 0
+    ''' Number of time the captcha was trigged '''
+    captcha: int = 0
+    ''' Number of time we dumped cookie to disk '''
+    cookie_dump: int = 0
+
+    def add_request(self):
+        self.requests_received += 1
+
+    def add_failed(self):
+        self.requests_failed += 1
+
+    def add_restart(self):
+        self.restart += 1
+
+    def add_content_text(self):
+        self.content_text += 1
+
+    def add_content_image(self):
+        self.content_image += 1
+
+    def add_client(self):
+        self.clients += 1
+
+    def add_captcha(self):
+        self.captcha += 1
+
+    def add_cookie_dump(self):
+        self.cookie_dump += 1
+
+    def add_size(self, size=0):
+        self.size_transfered += size
+
+    def set_ending(self):
+        self.ended = time.monotonic()
+
+    def emit_results(self):
+        duration = self.ended - self.started
+        logger = logging.getLogger(name="stats")
+        logger.info(
+            f"During {colorama.Style.BRIGHT}our lifetime of {duration:.3f} seconds{colorama.Style.NORMAL}, we {colorama.Style.BRIGHT}processed {self.requests_received} request(s){colorama.Style.NORMAL} from {colorama.Style.BRIGHT}{self.clients} client(s){colorama.Style.NORMAL}."
+        )
+        logger.info(
+            f"We {colorama.Style.BRIGHT}received {self.content_text} HTML page(s){colorama.Style.NORMAL} and {colorama.Style.BRIGHT}{self.content_image} image(s){colorama.Style.NORMAL}."
+        )
+        logger.info(
+            f"We {colorama.Style.BRIGHT}triggered a captcha {self.captcha} time(s){colorama.Style.NORMAL} and we {colorama.Style.DIM}dumped our cookie to disk {self.cookie_dump} time(s){colorama.Style.NORMAL}."
+        )
+        logger.info(
+            f"We {colorama.Style.BRIGHT}failed {self.requests_failed} time{colorama.Style.NORMAL}  so we had to {colorama.Style.BRIGHT}restart {self.restart} time(s){colorama.Style.NORMAL} ."
+        )
+        logger.info(
+            f"This translate to {colorama.Style.BRIGHT}{self.size_transfered} byte(s) of data{colorama.Style.NORMAL} transfered."
+        )
 
 
 class ChromeVersionFinder:
@@ -50,7 +125,6 @@ class ChromeVersionFinder:
     On Unix, we parse the output of chrome --version.
     On Windows, we parse the PE file.
     '''
-
     def __init__(self, chrome_path=None):
         if platform.system() == 'Windows':
             import pefile
@@ -103,7 +177,6 @@ class ChromeVersionFinder:
 
 
 class ProxiedBrowser:
-
     def __init__(self, chrome_path=None, verbose=False, chrome_version=None):
         self.chrome_path = chrome_path
         self.verbose = verbose
@@ -111,6 +184,7 @@ class ProxiedBrowser:
         self.driver = None
         self.ready = False
         self.wanted_url = None
+        self.time_last_cookie_dump = time.monotonic()
 
         # Initialize Chrome & load the cookie store
         logger = logging.getLogger(name="ProxiedBrowser(init)")
@@ -190,6 +264,7 @@ class ProxiedBrowser:
     def cookie_dump(self):
         # Export as a json the cookie stored in the browser
         logger = logging.getLogger(name="ProxiedBrowser(cookie_dump)")
+        Stats.add_cookie_dump()
 
         with open(cookie_store, 'wb') as cookie_file:
             logger.debug('Dumping cookies to %s', cookie_store)
@@ -303,8 +378,8 @@ def unix_exit_handler(mysignal, myframe):
     stay_in_mainloop = 0
     exit_triggered = 1
 
-    logging.info(colorama.Style.BRIGHT + 'Forcing' + colorama.Style.NORMAL +
-                 ' the server socket to close.')
+    logger.info(colorama.Style.BRIGHT + 'Forcing' + colorama.Style.NORMAL +
+                ' the server socket to close.')
     serversocket.close()
 
     logging.getLogger('urllib3.connectionpool').setLevel(
@@ -381,6 +456,7 @@ def get_content(driver, url, encodeb64):
 
     if driver.page_source().find("cf-browser-verification") != -1:
         set_console_title('Cloudfare challenge detected!')
+        Stats.add_captcha()
         if cloudfare_clickcaptcha(driver):
             driver.get(url)
             url_type = driver.get_document_content_type()
@@ -399,6 +475,7 @@ def get_content(driver, url, encodeb64):
     document_type = 'binary'
     if url_type == 'text/html':
         set_console_title(f'Downloading HTML content from {url}')
+        Stats.add_content_text()
         if encodeb64:
             document_type = 'text-b64'
             document_as_bytes = base64.standard_b64encode(
@@ -409,6 +486,7 @@ def get_content(driver, url, encodeb64):
 
     if url_type.startswith('image/'):
         set_console_title(f'Downloading image from {url}')
+        Stats.add_content_image()
         document_type = 'image'
         document_as_bytes = driver.get_image_content_as_bytes(
             driver.current_url())
@@ -425,6 +503,7 @@ def selenium_recovery(serversocket):
     '''
     global driver
     logger = logging.getLogger(name="selenium_recovery")
+    Stats.add_restart()
 
     set_console_title('Recovering from Selenium error - killing old browser')
     # Log the URL we failed to get
@@ -460,14 +539,13 @@ def selenium_recovery(serversocket):
 
 
 def mainloop(encodeb64):
-    global time_last_cookie_dump
     global exit_triggered
     global driver
     logger = logging.getLogger(name="mainloop")
 
-    if (time.monotonic() - time_last_cookie_dump) > 60:
+    if (time.monotonic() - driver.time_last_cookie_dump) > 60:
         driver.cookie_dump()
-        time_last_cookie_dump = time.monotonic()
+        driver.time_last_cookie_dump = time.monotonic()
 
     set_console_title(
         f'Listening on {serversocket.getsockname()[0]}:{serversocket.getsockname()[1]}'
@@ -476,6 +554,7 @@ def mainloop(encodeb64):
     (clientsocket, s_address) = serversocket.accept()
     clientsocket.setblocking(False)
     clientsocket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    Stats.add_client()
 
     #Code from https://code.activestate.com/recipes/408859/
     #Licenced under PSF by John Nielsen
@@ -511,6 +590,8 @@ def mainloop(encodeb64):
     logger.debug('Received data from client %s:%i: %s', s_address[0],
                  s_address[1], repr(data_from_client))
 
+    Stats.add_request()
+
     new_url = data_from_client.strip('\n')
 
     tries_count = 0
@@ -533,7 +614,7 @@ def mainloop(encodeb64):
                 colorama.Style.BRIGHT + 'Unrecoverable error' +
                 colorama.Style.NORMAL +
                 ' from Selenium: %s. Killing this instance...', e.msg)
-
+            Stats.add_failed()
             selenium_recovery(serversocket)
 
         except urllib3.exceptions.MaxRetryError as e:
@@ -541,6 +622,7 @@ def mainloop(encodeb64):
                 colorama.Style.BRIGHT + 'Unrecoverable error' +
                 colorama.Style.NORMAL +
                 ' from Selenium\' subsystem. Killing this instance...')
+            Stats.add_failed()
             selenium_recovery(serversocket)
 
     if tries_count != 0:
@@ -553,11 +635,12 @@ def mainloop(encodeb64):
 
     clientsocket.setblocking(True)
     set_console_title('Sending header')
+    doc_size = len(document_as_bytes)
     clientsocket.send(
-        str(len(document_as_bytes)).encode('utf-8') + b'||' +
-        document_type.encode('utf-8') + b"$END_OF_HEADER$")  #len
-    set_console_title(
-        f'Sending {len(document_as_bytes)} bytes of {document_type}')
+        str(doc_size).encode('utf-8') + b'||' + document_type.encode('utf-8') +
+        b"$END_OF_HEADER$")  #len
+    set_console_title(f'Sending {doc_size} bytes of {document_type}')
+    Stats.add_size(doc_size)
     clientsocket.sendall(document_as_bytes)
     clientsocket.close()
 
@@ -569,7 +652,6 @@ def mainloop(encodeb64):
 
 
 class CustomFormatter(logging.Formatter):
-
     def formatTime(self, record, datefmt=None):
         if '%f' in datefmt:
             datefmt = datefmt.replace('%f', '%03d' % record.msecs)
@@ -652,11 +734,21 @@ if __name__ == "__main__":
         log_file_handler.setFormatter(log_formatter)
         root_logger.addHandler(log_file_handler)
 
-    logging.info("%s version %s by %s <%s>", __software__, __version__,
-                 __author__, __email__)
-    logging.info("This %s software is licensed under %s", __status__,
-                 __license__)
-    logging.info('Running on %s', platform.platform())
+    # Not using the root logger for main
+    logger = logging.getLogger(name="main")
+
+    logger.info(
+        f"{colorama.Style.BRIGHT}{__software__}{colorama.Style.NORMAL} version {colorama.Style.BRIGHT}{__version__}{colorama.Style.NORMAL} by {colorama.Style.DIM}{__author__} <{__email__}>{colorama.Style.NORMAL}"
+    )
+    logger.info(
+        f"This {colorama.Style.BRIGHT}{__status__}{colorama.Style.NORMAL} software is licensed under {colorama.Style.BRIGHT}{__license__}{colorama.Style.NORMAL}"
+    )
+    logger.info(
+        f'Running on {colorama.Style.DIM}{platform.platform()}{colorama.Style.NORMAL}'
+    )
+
+    # Initialize the statistics
+    Stats = ff_Stats()
 
     chrome_path = None
     if args.chrome_path is not None:
@@ -670,21 +762,23 @@ if __name__ == "__main__":
         try:
             cvf = ChromeVersionFinder(chrome_path)
         except Exception as e:
-            logging.critical(
+            logger.critical(
                 'Failed to detect Chrome version: %s. Use ' +
                 colorama.Style.BRIGHT + '--chrome-path ' +
                 colorama.Style.NORMAL + 'to specify Chrome path.', str(e))
             sys.exit(2)
         chrome_version = cvf.version
-        logging.debug('ChromeVersionFinder returned %i for %s', cvf.version,
-                      cvf.path)
+        logger.debug('ChromeVersionFinder returned %i for %s', cvf.version,
+                     cvf.path)
 
     set_console_title('Initializing Chrome')
     driver = ProxiedBrowser(chrome_path, args.verbose, chrome_version)
     if driver.ready is False:
-        logging.critical('Initializing Chrome failed, exiting')
+        logger.critical('Initializing Chrome failed, exiting')
         sys.exit(1)
-    logging.info('Chrome is initialized & ready to works')
+    logger.info(
+        f'{colorama.Style.DIM}Chrome is initialized & ready to works!{colorama.Style.NORMAL}'
+    )
 
     ## Signals handler
     set_console_title('Configuring signal handler')
@@ -694,18 +788,18 @@ if __name__ == "__main__":
         try:
             win32api.SetConsoleCtrlHandler(win32_exit_handler, True)
         except Exception as e:
-            logging.warning('Call to SetConsoleCtrlHandler failed: %s', str(e))
+            logger.warning('Call to SetConsoleCtrlHandler failed: %s', str(e))
     else:
         # On Unix, Control + C is SIGINT
         try:
             signal.signal(signal.SIGINT, unix_exit_handler)
         except Exception as e:
-            logging.warning('Failed to install SIGINT handler: %s', str(e))
+            logger.warning('Failed to install SIGINT handler: %s', str(e))
         # Someone closed the terminal
         try:
             signal.signal(signal.SIGHUP, unix_exit_handler)
         except Exception as e:
-            logging.warning('Failed to install SIGHUP handler: %s', str(e))
+            logger.warning('Failed to install SIGHUP handler: %s', str(e))
 
     set_console_title('Creating server socket')
 
@@ -714,13 +808,13 @@ if __name__ == "__main__":
     try:
         serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     except Exception as e:
-        logging.warning('Failed to set SO_REUSEADDR on the server socket: %s',
-                        str(e))
+        logger.warning('Failed to set SO_REUSEADDR on the server socket: %s',
+                       str(e))
 
     try:
         serversocket.bind((args.address, args.port))
     except Exception as e:
-        logging.critical('Cannot create a TCP server: %s', str(e))
+        logger.critical('Cannot create a TCP server: %s', str(e))
         #Try to keep the user computer clean without any lingering geckodriver
         driver.suicide()
         sys.exit(3)
@@ -728,16 +822,16 @@ if __name__ == "__main__":
     # Configure the socket backlog
     serversocket.listen(5)
 
-    logging.info(
+    logger.info(
         'Listening on ' + colorama.Style.BRIGHT + '%s:%i' +
         colorama.Style.RESET_ALL,
         serversocket.getsockname()[0],
         serversocket.getsockname()[1])
 
     if encodeb64:
-        logging.info('Base64-encoding of HTML source code is ' +
-                     colorama.Style.BRIGHT + 'ENABLED' +
-                     colorama.Style.RESET_ALL)
+        logger.info('Base64-encoding of HTML source code is ' +
+                    colorama.Style.BRIGHT + 'ENABLED' +
+                    colorama.Style.RESET_ALL)
 
     set_console_title('Entering main loop')
     while (stay_in_mainloop):
@@ -747,33 +841,36 @@ if __name__ == "__main__":
         except Exception as e:
             if exit_triggered:
                 #The way we quit is ... not the python way.
-                logging.debug('Exception in the main loop during exit (%s)',
-                              str(e))
+                logger.debug('Exception in the main loop during exit (%s)',
+                             str(e))
                 break
             else:
-                logging.warning(
+                logger.warning(
                     'Exception ' + colorama.Style.BRIGHT + '%s' +
                     colorama.Style.RESET_ALL + ' in the main loop (%s)',
                     e.__class__.__name__, str(e))
+                Stats.add_failed()
                 # Try to reset the renderer with an internal page
                 driver.get('chrome://version')
                 continue
 
     set_console_title('Closing server socket')
+    Stats.set_ending()
 
     try:
         serversocket.close()  #Should already have happened
     except Exception as e:
-        logging.error('Failed to close server socket (%s', str(e))
+        logger.error('Failed to close server socket (%s', str(e))
 
     set_console_title('Closing browser')
-    logging.info('Requesting Selenium to quit')
+    logger.info('Requesting Selenium to quit')
     try:
         driver.quit()
     except Exception as e:
-        logging.warning('Request failed, killing process...')
+        logger.warning('Request failed, killing process...')
         set_console_title('Cleaning up')
         driver.suicide()
 
-    logging.info('Exiting...')
+    logger.info('Exiting...')
+    Stats.emit_results()
     sys.exit(0)
