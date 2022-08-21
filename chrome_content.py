@@ -34,6 +34,9 @@ __status__ = "Alpha"
 stay_in_mainloop = 1
 exit_triggered = 0
 
+# Chrome 103: chromedriver issue / https://bugs.chromium.org/p/chromedriver/issues/detail?id=4121
+incompatible_version = ['103']
+
 
 class FailedToDownload(Exception):
 
@@ -229,6 +232,15 @@ class ProxiedBrowser:
             driver.capabilities['chrome']['chromedriverVersion'],
             self.pid['chromedriver'], driver.capabilities['browserVersion'],
             self.pid['chrome'])
+
+        version_major = driver.capabilities['browserVersion'].split('.')[0]
+        if version_major in incompatible_version:
+            logger.critical(
+                f'{colorama.Style.BRIGHT}Chrome version {version_major} is incompatible with this software.{colorama.Style.RESET_ALL}'
+            )
+            raise Exception(
+                f'Chrome version {version_major} is incompatible with this software.'
+            )
 
         try:
             driver.get('chrome://version')
