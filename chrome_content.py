@@ -36,6 +36,7 @@ exit_triggered = 0
 
 
 class FailedToDownload(Exception):
+
     def __init__(self, error):
         self.error = error
 
@@ -125,6 +126,7 @@ class ChromeVersionFinder:
     On Unix, we parse the output of chrome --version.
     On Windows, we parse the PE file.
     '''
+
     def __init__(self, chrome_path=None):
         if platform.system() == 'Windows':
             import pefile
@@ -177,6 +179,7 @@ class ChromeVersionFinder:
 
 
 class ProxiedBrowser:
+
     def __init__(self, chrome_path=None, verbose=False, chrome_version=None):
         self.chrome_path = chrome_path
         self.verbose = verbose
@@ -412,7 +415,7 @@ def cloudfare_clickcaptcha(driver):
                 ' to continue' + colorama.Style.RESET_ALL)
     input()
 
-    if driver.page_source().find("cf-browser-verification") != -1:
+    if driver.page_source().find("cf-challenge-error-title") != -1:
         return False
     else:
         return True
@@ -454,7 +457,7 @@ def get_content(driver, url, encodeb64):
         colorama.Style.BRIGHT + '%s' + colorama.Style.RESET_ALL,
         driver.current_url(), driver.title(), url_type)
 
-    if driver.page_source().find("cf-browser-verification") != -1:
+    if driver.page_source().find("cf-challenge-error-title") != -1:
         set_console_title('Cloudfare challenge detected!')
         Stats.add_captcha()
         if cloudfare_clickcaptcha(driver):
@@ -652,6 +655,7 @@ def mainloop(encodeb64):
 
 
 class CustomFormatter(logging.Formatter):
+
     def formatTime(self, record, datefmt=None):
         if '%f' in datefmt:
             datefmt = datefmt.replace('%f', '%03d' % record.msecs)
