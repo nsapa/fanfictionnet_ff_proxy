@@ -37,6 +37,11 @@ exit_triggered = 0
 # Chrome 103: chromedriver issue / https://bugs.chromium.org/p/chromedriver/issues/detail?id=4121
 incompatible_version = ['103']
 
+# Cloudfare pattern
+cloudfare_patterns = [
+    'cf-challenge-error-title', '/cdn-cgi/images/trace/jsch/js/transparent.gif'
+]
+
 
 class FailedToDownload(Exception):
 
@@ -413,6 +418,14 @@ def win32_exit_handler(mysignal):
     return True
 
 
+def cloudfare_find_pattern(raw_data):
+    # If we find the pattern, we return True
+    for pattern in cloudfare_patterns:
+        if raw_data.find(pattern) != -1:
+            return True
+    return False
+
+
 def cloudfare_clickcaptcha(driver):
     # Try to validate hCaptcha
     logger = logging.getLogger(name="cloudfare_clickcaptcha")
@@ -427,10 +440,7 @@ def cloudfare_clickcaptcha(driver):
                 ' to continue' + colorama.Style.RESET_ALL)
     input()
 
-    if driver.page_source().find("cf-challenge-error-title") != -1:
-        return False
-    else:
-        return True
+    return not cloudfare_find_pattern(driver.page_source())
 
 
 def notify_user(title, message):
@@ -469,7 +479,7 @@ def get_content(driver, url, encodeb64):
         colorama.Style.BRIGHT + '%s' + colorama.Style.RESET_ALL,
         driver.current_url(), driver.title(), url_type)
 
-    if driver.page_source().find("cf-challenge-error-title") != -1:
+    if cloudfare_find_pattern(driver.page_source()):
         set_console_title('Cloudfare challenge detected!')
         Stats.add_captcha()
         if cloudfare_clickcaptcha(driver):
