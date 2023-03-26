@@ -39,7 +39,10 @@ incompatible_version = ['103']
 
 # Cloudfare pattern
 cloudfare_patterns = [
-    'cf-challenge-error-title', '/cdn-cgi/images/trace/jsch/js/transparent.gif'
+    'cf-challenge-error-title',
+    '/cdn-cgi/images/trace/jsch/js/transparent.gif',
+    '/cdn-cgi/images/trace/captcha/js/transparent.gif',
+    '/cdn-cgi/images/trace/captcha/nojs/transparent.gif'
 ]
 
 
