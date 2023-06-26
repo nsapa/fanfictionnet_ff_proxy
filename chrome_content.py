@@ -42,7 +42,9 @@ cloudfare_patterns = [
     'cf-challenge-error-title',
     '/cdn-cgi/images/trace/jsch/js/transparent.gif',
     '/cdn-cgi/images/trace/captcha/js/transparent.gif',
-    '/cdn-cgi/images/trace/captcha/nojs/transparent.gif'
+    '/cdn-cgi/images/trace/captcha/nojs/transparent.gif',
+    '/cdn-cgi/images/trace/managed/js/transparent.gif',
+    '/cdn-cgi/challenge-platform/h/g/orchestrate/managed/v1'
 ]
 
 
