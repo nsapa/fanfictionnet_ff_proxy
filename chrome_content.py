@@ -238,10 +238,12 @@ class ProxiedBrowser:
             colorama.Style.BRIGHT + '%i' + colorama.Style.RESET_ALL +
             ' driving Chrome version ' + colorama.Style.BRIGHT + '%s' +
             colorama.Style.RESET_ALL + ' running as pid ' +
-            colorama.Style.BRIGHT + '%i' + colorama.Style.RESET_ALL,
+            colorama.Style.BRIGHT + '%i' + colorama.Style.RESET_ALL +
+            ' with undetected_chromedriver ' + colorama.Style.BRIGHT + '%s' +
+            colorama.Style.RESET_ALL,
             driver.capabilities['chrome']['chromedriverVersion'],
             self.pid['chromedriver'], driver.capabilities['browserVersion'],
-            self.pid['chrome'])
+            self.pid['chrome'], uc.__version__)
 
         version_major = driver.capabilities['browserVersion'].split('.')[0]
         if version_major in incompatible_version:
