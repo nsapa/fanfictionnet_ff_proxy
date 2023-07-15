@@ -44,7 +44,7 @@ cloudfare_patterns = [
     '/cdn-cgi/images/trace/captcha/js/transparent.gif',
     '/cdn-cgi/images/trace/captcha/nojs/transparent.gif',
     '/cdn-cgi/images/trace/managed/js/transparent.gif',
-    '/cdn-cgi/challenge-platform/h/g/orchestrate/managed/v1'
+    '/cdn-cgi/challenge-platform/', '/cdn-cgi/styles/challenges.css'
 ]
 
 
