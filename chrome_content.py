@@ -451,14 +451,23 @@ def cloudfare_clickcaptcha(driver):
 
 
 def notify_user(title, message):
-    plyer.notification.notify(title, message, timeout=999)
+    try:
+        plyer.notification.notify(title, message, timeout=999)
+    except Exception as e:
+        logger.error(
+            f'Failed to notify user, title:{title}, message:{message}')
+
     return
 
 
 def set_console_title(message):
     message = __software__ + ' ' + __version__ + ': ' + message
 
-    print(colorama.ansi.set_title(message), end='\r')
+    try:
+        print(colorama.ansi.set_title(message), end='\r')
+    except Exception as e:
+        logger.error(f'Failed to set the Console title, message:{message}')
+
     return
 
 
