@@ -463,10 +463,11 @@ def notify_user(title, message):
 def set_console_title(message):
     message = __software__ + ' ' + __version__ + ': ' + message
 
-    try:
-        print(colorama.ansi.set_title(message), end='\r')
-    except Exception as e:
-        logger.error(f'Failed to set the Console title, message:{message}')
+    if disable_console_title is False:
+        try:
+            print(colorama.ansi.set_title(message), end='\r')
+        except Exception as e:
+            logger.error(f'Failed to set the Console title, message:{message}')
 
     return
 
@@ -736,6 +737,10 @@ if __name__ == "__main__":
                    action='store_true',
                    help='Base64-encode the HTML source code')
 
+    p.add_argument('--disable-console-title',
+                   action='store_true',
+                   help='Disable changing console title')
+
     args = p.parse_args()
 
     # Defaults value
@@ -752,6 +757,10 @@ if __name__ == "__main__":
     encodeb64 = False
     if args.base64:
         encodeb64 = True
+
+    disable_console_title = False
+    if args.disable_console_title:
+        disable_console_title = True
 
     # Load colorama (it will patch some function on Windows)
     colorama.init()
