@@ -27,10 +27,10 @@ jobs:
            python -m pip install -U cx_Freeze 
 
     - name: build the executable
-      run: python win32_build.py build_exe --include-msvcr=True
+      run: python win32_build.py build_exe --include-msvcr
 
     - name: upload built executable
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v6
       with:
           name: Archive_Windows
           path: build/
