@@ -44,7 +44,7 @@ cloudfare_patterns = [
     '/cdn-cgi/images/trace/captcha/js/transparent.gif',
     '/cdn-cgi/images/trace/captcha/nojs/transparent.gif',
     '/cdn-cgi/images/trace/managed/js/transparent.gif',
-    '/cdn-cgi/challenge-platform/', '/cdn-cgi/styles/challenges.css'
+    '/cdn-cgi/styles/challenges.css'
 ]
 
 
@@ -426,15 +426,18 @@ def win32_exit_handler(mysignal):
 
 
 def cloudfare_find_pattern(raw_data):
+    logger = logging.getLogger(name="cloudfare_find_pattern")
+
     # If we find the pattern, we return True
     for pattern in cloudfare_patterns:
         if raw_data.find(pattern) != -1:
+            logger.debug(f'Found pattern: {pattern}')
             return True
     return False
 
 
 def cloudfare_clickcaptcha(driver):
-    # Try to validate hCaptcha
+    # Captcha detected!
     logger = logging.getLogger(name="cloudfare_clickcaptcha")
 
     notify_user(
