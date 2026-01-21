@@ -4,6 +4,7 @@ colorama
 plyer
 psutil
 setuptools
+dbus-python; sys_platform == 'linux'
 pyobjus; sys_platform == 'darwin'
 pywin32; sys_platform == 'win32'
 pefile; sys_platform == 'win32'
