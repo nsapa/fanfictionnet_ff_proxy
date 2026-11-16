@@ -44,7 +44,8 @@ cloudfare_patterns = [
     '/cdn-cgi/images/trace/captcha/js/transparent.gif',
     '/cdn-cgi/images/trace/captcha/nojs/transparent.gif',
     '/cdn-cgi/images/trace/managed/js/transparent.gif',
-    '/cdn-cgi/styles/challenges.css'
+    '/cdn-cgi/styles/challenges.css',
+    'https://challenges.cloudflare.com; script-src-attr'
 ]
 
 
@@ -431,7 +432,7 @@ def cloudfare_find_pattern(raw_data):
     # If we find the pattern, we return True
     for pattern in cloudfare_patterns:
         if raw_data.find(pattern) != -1:
-            logger.debug(f'Found pattern: {pattern}')
+            logger.warning(f'Found Cloudflare challenge pattern: {pattern}')
             return True
     return False
 
